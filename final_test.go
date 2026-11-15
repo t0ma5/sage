@@ -114,16 +114,6 @@ func TestSaveSettingsKeepsOnlyWhatBelongs(t *testing.T) {
 	}
 }
 
-func TestLogErrorReportedOnce(t *testing.T) {
-	s := &SageService{baseDir: filepath.Join(t.TempDir(), "no", "such", "folder")}
-	s.writeLog.Store(true)
-	s.logLine("one")
-	if !s.logErrorShown.Load() {
-		t.Fatal("log failure not noticed")
-	}
-	s.logLine("two") // must not panic or report again (nothing to observe without a window)
-}
-
 func TestLongPathPrefix(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows only")

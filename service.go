@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +27,6 @@ import (
 const (
 	appTitle     = "sage v0.1.0"
 	settingsFile = "sageSettings.json"
-	logFile      = "log.txt"
 )
 
 // Settings are saved next to the exe. Lines holding a secret key are never saved.
@@ -36,7 +36,6 @@ type Settings struct {
 	RecipientsFile string `json:"recipientsFile"`
 	Identities     string `json:"identities"`
 	Armor          bool   `json:"armor"`
-	WriteLog       bool   `json:"writeLog"`
 	PostQuantum    bool   `json:"postQuantum"`
 	// Notice is a one-time message from LoadSettings; it is never saved.
 	Notice string `json:"notice,omitempty"`
@@ -91,6 +90,17 @@ type AddResult struct {
 	Files []string `json:"files"`
 	Mode  string   `json:"mode"`
 	Note  string   `json:"note"`
+	// Sizes in bytes, for the list's Size column.
+	Sizes map[string]int64 `json:"sizes"`
+}
+
+// FileResult is what happened to one file in a job; the window shows it in that file's row.
+type FileResult struct {
+	Path      string `json:"path"`
+	OK        bool   `json:"ok"`
+	Output    string `json:"output"` // the file written, when OK
+	Error     string `json:"error"`  // why it failed, in words a user can act on
+	Cancelled bool   `json:"cancelled"`
 }
 
 // Progress is sent while a job runs.
@@ -104,8 +114,9 @@ type Progress struct {
 
 // JobDone is sent once when a job ends.
 type JobDone struct {
-	Summary   string   `json:"summary"`
-	Remaining []string `json:"remaining"`
+	Summary   string       `json:"summary"`
+	Remaining []string     `json:"remaining"`
+	Results   []FileResult `json:"results"`
 }
 
 // KeyPair is the result of generating a new identity.
@@ -115,7 +126,7 @@ type KeyPair struct {
 }
 
 func init() {
-	application.RegisterEvent[string]("job:log")
+	application.RegisterEvent[FileResult]("job:file")
 	application.RegisterEvent[Progress]("job:progress")
 	application.RegisterEvent[JobDone]("job:done")
 	application.RegisterEvent[[]string]("files:dropped")
@@ -130,8 +141,6 @@ type SageService struct {
 	running  bool
 	cancel   context.CancelFunc
 	inflight       sync.WaitGroup
-	writeLog       atomic.Bool
-	logErrorShown  atomic.Bool
 	settingsBroken atomic.Bool
 
 	onBytes func() // tests only: called as data is processed
@@ -191,7 +200,6 @@ func (s *SageService) LoadSettings() Settings {
 	if st.ActiveTab != "recipient" {
 		st.ActiveTab = "passphrase"
 	}
-	s.writeLog.Store(st.WriteLog)
 	return st
 }
 
@@ -236,7 +244,6 @@ func looksLikeBase64Blob(s string) bool {
 
 // SaveSettings writes to a temp file and renames it, so a crash can't wipe them.
 func (s *SageService) SaveSettings(st Settings) error {
-	s.writeLog.Store(st.WriteLog)
 	if s.settingsBroken.Load() {
 		return errors.New("the damaged settings file could not be moved aside, so settings are not saved")
 	}
@@ -260,26 +267,6 @@ func (s *SageService) SaveSettings(st Settings) error {
 	return nil
 }
 
-func (s *SageService) logLine(text string) {
-	if s.app != nil {
-		s.app.Event.Emit("job:log", text)
-	}
-	if !s.writeLog.Load() {
-		return
-	}
-	f, err := os.OpenFile(filepath.Join(s.baseDir, logFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err == nil {
-		_, err = fmt.Fprintf(f, "[%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), text)
-		if closeErr := f.Close(); err == nil {
-			err = closeErr
-		}
-	}
-	// Say once per run that log.txt can't be written, instead of failing silently.
-	if err != nil && s.logErrorShown.CompareAndSwap(false, true) && s.app != nil {
-		s.app.Event.Emit("job:log", "(log.txt can't be written next to sage.exe: "+err.Error()+")")
-	}
-}
-
 // ---------------------------------------------------------------- file list
 
 // AddPaths adds dropped or chosen paths to the list.
@@ -290,7 +277,7 @@ func (s *SageService) AddPaths(existing, added []string) AddResult {
 		if len(problems) > 0 {
 			note = "No files could be added:\n" + problemLines(problems)
 		}
-		return AddResult{Files: existing, Mode: modeOf(existing), Note: note}
+		return AddResult{Files: existing, Mode: modeOf(existing), Note: note, Sizes: sizesOf(existing)}
 	}
 	files, mode, ignored, duplicates := mergeFiles(existing, expanded)
 	note := ""
@@ -313,11 +300,22 @@ func (s *SageService) AddPaths(existing, added []string) AddResult {
 		}
 		note += "Not added:\n" + problemLines(problems)
 	}
-	return AddResult{Files: files, Mode: mode, Note: note}
+	return AddResult{Files: files, Mode: mode, Note: note, Sizes: sizesOf(files)}
+}
+
+// sizesOf returns each file's size for the list's Size column (missing files are left out).
+func sizesOf(files []string) map[string]int64 {
+	sizes := make(map[string]int64, len(files))
+	for _, f := range files {
+		if info, err := os.Stat(f); err == nil {
+			sizes[f] = info.Size()
+		}
+	}
+	return sizes
 }
 
 // problemLines lists unreadable paths, at most 5. (When sage runs as administrator
-// the window shows a permanent warning line, so it isn't repeated here.)
+// the window shows the warning dialog and the Admin pill, so it isn't repeated here.)
 func problemLines(problems []string) string {
 	var b strings.Builder
 	for i, p := range problems {
@@ -334,12 +332,45 @@ func problemLines(problems []string) string {
 const adminWarning = "Warning: sage is running as administrator. Windows hides drives mapped by your normal account from it, " +
 	"also blocks drag & drop from Explorer. Close sage and start it normally."
 
-// AdminWarning returns a warning when sage runs as administrator, for the window's permanent warning line.
+// AdminWarning returns a warning when sage runs as administrator, for the window's
+// warning dialog and Admin pill.
 func (s *SageService) AdminWarning() string {
 	if runningElevated() {
 		return adminWarning
 	}
 	return ""
+}
+
+// GeneratePassphrase returns a random passphrase: 6 groups of 5 characters from a
+// 31-character alphabet without look-alikes (i, l, o, 0, 1), about 148 bits.
+func (s *SageService) GeneratePassphrase() (string, error) {
+	const alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+	limit := byte(256 - 256%len(alphabet)) // rejection sampling: no modulo bias
+	var out []byte
+	buf := make([]byte, 64)
+	for len(out) < 30 {
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		for _, b := range buf {
+			if b < limit && len(out) < 30 {
+				out = append(out, alphabet[int(b)%len(alphabet)])
+			}
+		}
+	}
+	groups := make([]string, 6)
+	for i := range groups {
+		groups[i] = string(out[i*5 : i*5+5])
+	}
+	return strings.Join(groups, "-"), nil
+}
+
+// OpenFolder shows a file in Explorer, selected (for a finished row's folder button).
+func (s *SageService) OpenFolder(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("%s isn't there any more", filepath.Base(path))
+	}
+	return showInExplorer(path)
 }
 
 func modeOf(files []string) string {
@@ -352,7 +383,7 @@ func modeOf(files []string) string {
 // Status says whether the action can run and, if not, exactly what is missing.
 func (s *SageService) Status(r Request) Status {
 	if len(r.Files) == 0 {
-		return Status{Button: "Encrypt", Hint: "Drop files or folders above, or click Add files."}
+		return Status{Button: "Encrypt", Hint: "Drop files or folders above, or click Files."}
 	}
 	// The mode comes from the files, never from the window.
 	r.Mode = modeOf(r.Files)
@@ -566,26 +597,23 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 	}()
 
-	verb := "Decrypting"
-	if encrypt {
-		verb = "Encrypting"
+	// Each file's result goes to its row in the window as soon as it's known.
+	var results []FileResult
+	report := func(r FileResult) {
+		results = append(results, r)
+		if s.app != nil {
+			s.app.Event.Emit("job:file", r)
+		}
 	}
-	s.logLine("=== Processing ===")
 	ok, failed := 0, 0
 	var failedFiles []string
 	done := map[string]bool{}
 	stopReason := ""
-	lastFolder := ""
 	for i, f := range files {
 		if ctx.Err() != nil {
 			break
 		}
-		if folder := filepath.Dir(f); folder != lastFolder {
-			s.logLine("In " + folder + ":")
-			lastFolder = folder
-		}
-		s.logLine(fmt.Sprintf("  [%d/%d] %s %s", i+1, len(files), verb, filepath.Base(f)))
-		setProgress(i, filepath.Base(f))
+		setProgress(i, f)
 		emitProgress()
 
 		var counted int64
@@ -599,18 +627,18 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		if err == nil {
 			ok++
 			done[f] = true
-			s.logLine("      -> " + filepath.Base(out))
+			report(FileResult{Path: f, OK: true, Output: out})
 			continue
 		}
 		// The bytes of a failed file don't count as done.
 		doneBytes.Add(-counted)
 		if ctx.Err() != nil {
-			s.logLine("      Cancelled")
+			report(FileResult{Path: f, Cancelled: true, Error: "Cancelled; nothing was written."})
 			break
 		}
 		failed++
 		failedFiles = append(failedFiles, f)
-		s.logLine("      FAILED: " + friendlyError(err))
+		report(FileResult{Path: f, Error: friendlyError(err)})
 		// A wrong key on the first file stops the batch: every further file would
 		// cost another slow key derivation and fail the same way.
 		if isWrongKey(err) && ok == 0 {
@@ -630,7 +658,6 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 		summary += fmt.Sprintf(", %d not processed (%s)", skipped, why)
 	}
-	s.logLine("=== " + summary + " ===")
 
 	// Failed and unprocessed files stay in the list for a retry, failed ones last.
 	isFailed := map[string]bool{}
@@ -644,7 +671,7 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 	}
 	remaining = append(remaining, failedFiles...)
-	result := JobDone{Summary: summary + ".", Remaining: remaining}
+	result := JobDone{Summary: summary + ".", Remaining: remaining, Results: results}
 	if s.app != nil {
 		s.app.Event.Emit("job:done", result)
 	}

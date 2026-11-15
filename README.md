@@ -15,25 +15,25 @@ sage is unofficial and not affiliated with age's authors.
 
 <p align="center">
   <img src="docs/screenshot-passphrase.png" alt="sage, Passphrase tab" width="49%">
-  <img src="docs/screenshot-recipient.png" alt="sage, Recipient tab" width="49%">
+  <img src="docs/screenshot-recipient.png" alt="sage, Keys tab" width="49%">
 </p>
 
 ## Use it
 
 1. Start `sage.exe`.
-2. Add files: drop files or folders on the file list, or use **Add files** / **Add folder**. Each addition joins the list; duplicates are skipped. A folder adds the files directly inside it (the list says how many subfolders were left out).
-3. Choose a tab, **Passphrase** or **Recipient**, and fill it in.
+2. Add files: drop files or folders on the file list, or use the green **Files** / **Folder** buttons. Each addition joins the list (name, folder, size); duplicates are skipped, and **×** removes a file. A folder adds the files directly inside it (the list says how many subfolders were left out, and which paths couldn't be read and why).
+3. Choose a tab, **Passphrase** or **Keys**, and fill it in.
 4. Click the button at the bottom right (**Encrypt 3 files**, **Decrypt 1 file**, ...) or press Enter in a passphrase field.
 
-The line next to the button always says what is missing ("Repeat the passphrase to confirm it.", "Add an identity file under 'Decrypt with'.") and, after a run, the result ("Finished: 3 OK, 0 failed").
+The line next to the button always says what is missing ("Repeat the passphrase to confirm it.", "Add an identity file under 'Decrypt with'."). After a run, each file's row shows its result: a check mark and the file written (with a button that shows it in its folder), or what went wrong. Finished files stay in the list for reference but aren't processed again; failed ones are retried by the next run.
 
 **Encrypt or decrypt is chosen by the files:** `.age` files are decrypted, everything else is encrypted. If you add both kinds, only the `.age` files are kept.
 
 ### Passphrase
 
-For files protected with a passphrase (`age -p`). Encrypting asks for it twice; **Show passphrase** reveals it. A passphrase containing a line break (usually from pasting) is refused. A wrong passphrase on the first file stops the batch, because every further file would fail the same way after another slow key derivation; files that failed or weren't processed stay in the list for a retry.
+For files protected with a passphrase (`age -p`). Encrypting asks for it twice; the eye button reveals it. **Generate a strong passphrase** fills in a random one (30 characters, about 148 bits) and shows it, so you can copy it somewhere safe. A passphrase containing a line break (usually from pasting) is refused. A wrong passphrase on the first file stops the batch, because every further file would fail the same way after another slow key derivation; files that failed or weren't processed stay in the list for a retry.
 
-### Recipient (keys)
+### Keys
 
 - **Encrypt to:** public keys, one per line: age keys (`age1...`), post-quantum age keys (`age1pq1...`), tagged keys, or SSH keys (`ssh-ed25519 ...`, `ssh-rsa ...`). `#` starts a comment. And/or a recipients file. Everyone listed can decrypt the file.
 - **Decrypt with:** identity (secret key) files, one path per line: age identity files or unencrypted SSH private keys.
@@ -49,12 +49,13 @@ Not supported yet: age plugins (e.g. YubiKey), and passphrase-protected identity
 - Each file is written as `name.part` first and renamed only when it finished correctly. A failed or cancelled file leaves nothing behind; a crash leaves an obvious `.part` file, never a truncated file under the real name.
 - Works on virtual drives such as a mounted Cryptomator vault, and in folders with paths over 260 characters.
 - **Cancel** stops the current file and removes its partial output. **Inspect** shows what an `.age` file is encrypted to and whether it is post-quantum, without decrypting it.
-- The **i** button shows the version and links to this repository and to age.
+- The **(i)** button shows the version and links to this repository and to age.
+- Started as administrator (for example from a search tool that runs elevated), sage says so in a dialog and keeps an amber **Admin** pill in the toolbar: Windows then hides drives mapped by your normal account, such as Cryptomator vaults, and blocks drag and drop from Explorer.
 
 ### Options and settings
 
-- **ASCII armor output (-a):** text output instead of binary, for e-mail or chat.
-- **Write log.txt** (off by default): a timestamped log next to `sage.exe`. It never contains the passphrase, but it does list which files you processed.
+- **ASCII armor:** text output instead of binary, for e-mail or chat.
+- sage writes no log file: results are shown in the window only.
 - Settings are saved in `sageSettings.json` next to `sage.exe`. Only recipients, comments and paths are stored; secret keys, pasted private keys and other stray text never are. A damaged settings file is kept as `sageSettings.json.bad` and reported.
 
 ### Send to

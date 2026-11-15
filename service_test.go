@@ -56,7 +56,50 @@ func TestRunContinuesAfterLaterWrongKey(t *testing.T) {
 	if !strings.HasPrefix(done.Summary, "Finished: 2 OK, 1 failed") {
 		t.Fatalf("summary %q", done.Summary)
 	}
+	// Each file's result, for its row in the window.
+	if len(done.Results) != 3 {
+		t.Fatalf("results: %+v", done.Results)
+	}
+	for _, r := range done.Results {
+		switch r.Path {
+		case a, c:
+			if !r.OK || r.Output != strings.TrimSuffix(r.Path, ".age") || r.Error != "" {
+				t.Errorf("ok result: %+v", r)
+			}
+		case b:
+			if r.OK || r.Output != "" || r.Error == "" || r.Cancelled {
+				t.Errorf("failed result: %+v", r)
+			}
+		}
+	}
 	noPartFiles(t, dir)
+}
+
+func TestGeneratePassphrase(t *testing.T) {
+	s := &SageService{}
+	a, err := s.GeneratePassphrase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.GeneratePassphrase()
+	if a == b || len(a) != 35 || strings.Count(a, "-") != 5 || strings.ContainsAny(a, "ilo01") {
+		t.Fatalf("%q / %q", a, b)
+	}
+	for _, c := range strings.ReplaceAll(a, "-", "") {
+		if !strings.ContainsRune("abcdefghjkmnpqrstuvwxyz23456789", c) {
+			t.Fatalf("unexpected %q in %q", c, a)
+		}
+	}
+}
+
+func TestAddPathsSizes(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "five.txt")
+	write(t, p, "12345")
+	res := (&SageService{}).AddPaths(nil, []string{p})
+	if res.Sizes[p] != 5 {
+		t.Fatalf("sizes: %v", res.Sizes)
+	}
 }
 
 func TestRunStopsOnFirstWrongKeyAndOrdersRetry(t *testing.T) {
@@ -90,6 +133,9 @@ func TestRunCancelled(t *testing.T) {
 	done := (&SageService{}).run(ctx, []string{a}, false, nil, identityFor(t, "one"), false)
 	if !strings.Contains(done.Summary, "not processed (cancelled)") || len(done.Remaining) != 1 {
 		t.Fatalf("%+v", done)
+	}
+	if len(done.Results) != 0 {
+		t.Fatalf("a job cancelled before it started has no file results: %+v", done.Results)
 	}
 }
 

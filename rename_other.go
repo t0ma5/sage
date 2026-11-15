@@ -19,3 +19,5 @@ func retryWhileLocked(action func() error) error { return action() }
 func isElevated() bool { return false }
 
 func isNetUnreachable(error) bool { return false }
+
+func showInExplorer(string) error { return nil }

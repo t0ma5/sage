@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -72,6 +73,13 @@ func isElevated() bool {
 	err := windows.GetTokenInformation(windows.GetCurrentProcessToken(), windows.TokenElevationType,
 		(*byte)(unsafe.Pointer(&elevationType)), uint32(unsafe.Sizeof(elevationType)), &size)
 	return err == nil && elevationType == 2 // TokenElevationTypeFull
+}
+
+// showInExplorer opens the file's folder in Explorer with the file selected.
+func showInExplorer(path string) error {
+	// Explorer accepts "/select," followed by the path as the next argument; Go quotes a
+	// path with spaces. Explorer's exit code is meaningless, so Start, not Run.
+	return exec.Command("explorer.exe", "/select,", path).Start()
 }
 
 // isNetUnreachable reports whether err means a network share can't be reached:

@@ -7,100 +7,174 @@ import {SageService} from "../bindings/sage";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const box = $<HTMLDivElement>("box");
-const badge = $("badge");
+const list = $("list");
+const summary = $("summary");
 const hint = $("hint");
 const actionBtn = $<HTMLButtonElement>("action");
 const cancelBtn = $<HTMLButtonElement>("cancel");
 const fill = $("progressFill");
 const passphrase = $<HTMLInputElement>("passphrase");
 const confirmPass = $<HTMLInputElement>("confirm");
+const showPass = $<HTMLButtonElement>("showPass");
 const recipients = $<HTMLTextAreaElement>("recipients");
 const recipientsFile = $<HTMLInputElement>("recipientsFile");
 const identities = $<HTMLTextAreaElement>("identities");
 const armor = $<HTMLInputElement>("armor");
-const writeLog = $<HTMLInputElement>("writeLog");
 const pq = $<HTMLInputElement>("pq");
 
-let files: string[] = [];
-let mode = "";
+// ---------------------------------------------------------------- state
+
+// One row per file. "done" rows stay visible with their result but are not part
+// of the next run; "failed" rows show why and are retried by the next run.
+type RowStatus = "ready" | "working" | "done" | "failed";
+interface Entry {
+    path: string;
+    size?: number;
+    status: RowStatus;
+    output?: string; // the file written
+    error?: string;  // why it failed
+}
+
+let entries: Entry[] = [];
 let tab: "passphrase" | "recipient" = "passphrase";
 let busy = false;
-let lastSummary = "";
+let lastSummary = "";   // "Finished: 2 OK, 1 failed." after a run
+let notes = "";         // notes from adding files, settings, etc.
+let notesWarn = false;
 
-// ---------------------------------------------------------------- the box
+/** The files the next run will process. */
+function pending(): string[] {
+    return entries.filter(e => e.status !== "done").map(e => e.path);
+}
 
-// Each line of the box is its own block: its own leading spaces (real text, so
-// nesting shows and survives copying), a bullet, and the text; wrapped text is
-// indented under the first word. The bullet is left out of copied text.
-const BULLET = "• ";
-function addLines(text: string) {
-    for (const raw of text.split("\n")) {
-        const div = document.createElement("div");
-        div.className = "ln";
-        const body = raw.replace(/^[ \t]+/, "").trimEnd();
-        if (!body) {
-            div.append(document.createElement("br")); // an empty line, also when copied
+/** .age files are decrypted, everything else encrypted (Go keeps the list from mixing). */
+function modeOf(paths: string[]): "" | "encrypt" | "decrypt" {
+    if (paths.length === 0) return "";
+    return paths.every(p => p.toLowerCase().endsWith(".age")) ? "decrypt" : "encrypt";
+}
+
+function baseName(p: string): string {
+    return p.slice(Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/")) + 1);
+}
+
+function folderOf(p: string): string {
+    const dir = p.slice(0, Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/")));
+    return /^[A-Za-z]:$/.test(dir) ? dir + "\\" : dir; // a drive root is "F:\" ("F:" alone means the current folder there)
+}
+
+function formatSize(n?: number): string {
+    if (n === undefined) return "";
+    if (n < 1024) return `${n} B`;
+    const units = ["KB", "MB", "GB", "TB"];
+    let v = n / 1024, u = 0;
+    while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+    return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[u]}`;
+}
+
+function icon(name: string, cls = "ic"): SVGSVGElement {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", cls);
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `#i-${name}`);
+    svg.append(use);
+    return svg;
+}
+
+// ---------------------------------------------------------------- the list
+
+function renderList() {
+    list.replaceChildren();
+    // After a run the second column shows each file's result instead of its folder.
+    $("colSecond").textContent = entries.some(e => e.status === "done" || e.status === "failed") ? "Result" : "Folder";
+    if (entries.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        const title = document.createElement("strong");
+        title.textContent = "Drop files or folders here";
+        const l1 = document.createElement("span");
+        l1.textContent = ".age files are decrypted, everything else is encrypted.";
+        const l2 = document.createElement("span");
+        l2.textContent = "Output goes next to each file; existing files are never overwritten.";
+        empty.append(icon("file-plus"), title, l1, l2);
+        list.append(empty);
+        return;
+    }
+    for (const e of entries) {
+        const row = document.createElement("div");
+        row.className = `row-file ${e.status}`;
+        row.setAttribute("role", "listitem");
+        row.title = e.path;
+
+        const name = document.createElement("span");
+        name.className = "cell-name";
+        const iconName = e.status === "done" ? "check" : e.status === "failed" ? "alert"
+            : e.status === "working" ? "loader" : e.path.toLowerCase().endsWith(".age") ? "lock" : "file";
+        const label = document.createElement("span");
+        label.className = "ellipsis";
+        label.textContent = baseName(e.path);
+        name.append(icon(iconName), label);
+
+        // Second column: the folder, or after a run the output name or what went wrong.
+        const sub = document.createElement("span");
+        sub.className = "cell-sub ellipsis";
+        sub.textContent = e.status === "done" ? `\u2192 ${baseName(e.output ?? "")}`
+            : e.status === "failed" ? e.error ?? "Failed" : folderOf(e.path);
+        if (e.status === "done" || e.status === "failed") sub.title = e.status === "done" ? e.output ?? "" : e.error ?? "";
+
+        const size = document.createElement("span");
+        size.className = "num cell-sub";
+        size.textContent = formatSize(e.size);
+
+        const btn = document.createElement("button");
+        btn.className = "row-btn";
+        btn.type = "button";
+        if (e.status === "done") {
+            btn.append(icon("folder-open"));
+            btn.title = "Show in folder";
+            btn.setAttribute("aria-label", `Show ${baseName(e.output ?? "")} in its folder`);
+            btn.onclick = () => SageService.OpenFolder(e.output ?? "").catch(err => setNotes(String(err?.message ?? err), true));
         } else {
-            const indent = raw.slice(0, raw.length - raw.replace(/^[ \t]+/, "").length).replace(/\t/g, "    ");
-            const hang = indent.length + BULLET.length;
-            div.style.paddingLeft = `${hang}ch`;
-            div.style.textIndent = `-${hang}ch`;
-            const bullet = document.createElement("span");
-            bullet.className = "bullet";
-            bullet.setAttribute("aria-hidden", "true");
-            bullet.textContent = BULLET;
-            if (indent) div.append(indent);
-            div.append(bullet, body);
+            btn.append(icon("x"));
+            btn.title = "Remove from the list";
+            btn.setAttribute("aria-label", `Remove ${baseName(e.path)}`);
+            btn.disabled = busy;
+            btn.onclick = () => {
+                entries = entries.filter(x => x !== e);
+                lastSummary = "";
+                renderList();
+                refresh();
+            };
         }
-        box.append(div);
+        row.append(name, sub, size, btn);
+        list.append(row);
     }
 }
 
-// Copying from the box gives the lines with their indentation, without bullets.
-box.addEventListener("copy", e => {
-    const text = document.getSelection()?.toString() ?? "";
-    if (!text) return; // nothing selected: leave the clipboard alone
-    e.clipboardData?.setData("text/plain", text.replace(/^([ \t]*)• /gm, "$1"));
-    e.preventDefault();
-});
-
-function setBox(text: string) {
-    box.replaceChildren();
-    if (text) addLines(text);
-    box.scrollTop = box.scrollHeight;
+function setNotes(text: string, warn = false) {
+    notes = text;
+    notesWarn = warn;
+    renderSummary();
 }
 
-function appendBox(line: string) {
-    addLines(line);
-    box.scrollTop = box.scrollHeight;
-}
-
-// A one-time settings notice (e.g. a damaged settings file) stays part of the
-// welcome text, so Clear doesn't make it disappear (page does the same).
-let settingsNotice = "";
-
-function showWelcome() {
-    setBox([
-        "Drop files or folders here.",
-        "",
-        "  .age files are decrypted, everything else is encrypted.",
-        "  Output goes next to each file; existing files are never overwritten.",
-        "  Encryption by the official age library, built in.",
-        ...(settingsNotice ? ["", settingsNotice] : []),
-    ].join("\n"));
-    box.scrollTop = 0; // the welcome text starts at the top
-}
-
-function showFiles(note = "") {
-    const lines = files.map(f => {
-        const i = Math.max(f.lastIndexOf("\\"), f.lastIndexOf("/"));
-        let dir = f.slice(0, i);
-        if (/^[A-Za-z]:$/.test(dir)) dir += "\\"; // a drive root is "F:\" ("F:" alone means the current folder there)
-        return `${f.slice(i + 1)}    (${dir})`;
-    });
-    setBox(lines.join("\n") + (note ? "\n" + note : ""));
-    setProgress(0, false);
+function renderSummary() {
+    const lines: string[] = [];
+    const todo = pending();
+    if (lastSummary) {
+        lines.push(lastSummary);
+    } else if (todo.length) {
+        const bytes = entries.filter(e => e.status !== "done").reduce((s, e) => s + (e.size ?? 0), 0);
+        const verb = modeOf(todo) === "decrypt" ? "decrypted" : "encrypted";
+        lines.push(`${todo.length} file${todo.length === 1 ? "" : "s"} will be ${verb} \u00b7 ${formatSize(bytes)}`);
+    }
+    summary.replaceChildren();
+    if (lines.length) summary.append(lines.join("\n"));
+    if (notes) {
+        const n = document.createElement("div");
+        if (notesWarn) n.className = "warn";
+        n.textContent = notes;
+        summary.append(n);
+    }
 }
 
 function setProgress(fraction: number, visible = true) {
@@ -114,8 +188,9 @@ function setProgress(fraction: number, visible = true) {
 // passphrase itself. Start sends the real passphrase, once.
 function request(withPassphrase = false) {
     const p = passphrase.value, c = confirmPass.value;
+    const files = pending();
     return {
-        files, mode, tab,
+        files, mode: modeOf(files), tab,
         passphrase: withPassphrase ? p : "",
         confirm: withPassphrase ? c : "",
         passInfo: {set: p !== "", confirmSet: c !== "", match: p === c, lineBreak: /[\r\n]/.test(p + c)},
@@ -129,22 +204,20 @@ function request(withPassphrase = false) {
 let refreshSeq = 0;
 
 async function refresh() {
-    // Badge and decrypt-only fields.
-    badge.hidden = files.length === 0;
-    badge.className = "badge " + mode;
-    badge.textContent = `${mode.toUpperCase()} · ${files.length}`;
+    const mode = modeOf(pending());
     confirmPass.hidden = mode === "decrypt";
+    $("genPass").hidden = mode === "decrypt";
     armor.disabled = busy || mode === "decrypt";
-    $<HTMLButtonElement>("inspect").disabled = busy || !files.some(f => f.toLowerCase().endsWith(".age"));
+    $<HTMLButtonElement>("inspect").disabled = busy || !entries.some(e => e.path.toLowerCase().endsWith(".age"));
 
     for (const id of ["addFiles", "addFolder", "clear", "tabPassphrase", "tabRecipient", "help",
-        "browseRecipients", "addIdentity", "keygen"]) {
+        "browseRecipients", "addIdentity", "keygen", "genPass", "showPass"]) {
         $<HTMLButtonElement>(id).disabled = busy;
     }
-    for (const el of [passphrase, confirmPass, recipients, recipientsFile, identities, pq, writeLog,
-        $<HTMLInputElement>("showPass")]) {
+    for (const el of [passphrase, confirmPass, recipients, recipientsFile, identities, pq]) {
         el.disabled = busy;
     }
+    renderSummary();
     cancelBtn.hidden = !busy;
     if (busy) {
         actionBtn.disabled = true;
@@ -157,14 +230,16 @@ async function refresh() {
     if (seq !== refreshSeq || busy) return; // a newer refresh, or a job started meanwhile
     actionBtn.disabled = !st.enabled;
     actionBtn.textContent = st.button;
-    hint.textContent = lastSummary ? `${lastSummary} ${st.hint}` : st.hint;
+    hint.textContent = st.hint;
     hint.classList.toggle("warn", st.warn);
 }
 
 function setTab(t: "passphrase" | "recipient", save = true) {
     tab = t;
-    $("tabPassphrase").classList.toggle("active", t === "passphrase");
-    $("tabRecipient").classList.toggle("active", t === "recipient");
+    for (const [id, on] of [["tabPassphrase", t === "passphrase"], ["tabRecipient", t === "recipient"]] as const) {
+        $(id).classList.toggle("active", on);
+        $(id).setAttribute("aria-selected", String(on));
+    }
     $("panelPassphrase").hidden = t !== "passphrase";
     $("panelRecipient").hidden = t !== "recipient";
     if (save) saveSettingsSoon();
@@ -185,12 +260,11 @@ function saveSettingsSoon() {
             recipientsFile: recipientsFile.value,
             identities: identities.value,
             armor: armor.checked,
-            writeLog: writeLog.checked,
             postQuantum: pq.checked,
         } as any).catch(err => {
             if (!settingsErrorShown) {
                 settingsErrorShown = true;
-                appendBox(String(err?.message ?? err));
+                setNotes(String(err?.message ?? err), true);
             }
         });
     }, 400);
@@ -205,24 +279,37 @@ async function addPaths(paths: string[] | null) {
         hint.classList.add("warn");
         return;
     }
-    const res = await SageService.AddPaths(files, paths);
-    if (busy) return; // a job started while this was in flight; it owns the box now
+    const res = await SageService.AddPaths(pending(), paths);
+    if (busy) return; // a job started while this was in flight
     const resFiles = res.files ?? []; // Go sends an empty list as null
-    if (resFiles.length === files.length && res.note.startsWith("No files")) {
-        appendBox(res.note); // keep what is shown, just add the note
-        return;
-    }
-    files = resFiles;
-    mode = res.mode;
+    const sizes = res.sizes ?? {};
+    // New files start a new batch: finished rows from the last run go away.
+    const old = new Map(entries.filter(e => e.status !== "done").map(e => [e.path, e]));
+    entries = resFiles.map(p => {
+        const prev = old.get(p);
+        return prev ?? {path: p, size: sizes[p], status: "ready" as RowStatus};
+    });
+    for (const e of entries) if (e.size === undefined) e.size = sizes[e.path];
     lastSummary = "";
-    showFiles(res.note);
+    setProgress(0, false);
+    renderList();
+    setNotes(res.note, res.note.startsWith("No files") || res.note.includes("Not added"));
     refresh();
-    if (tab === "passphrase") passphrase.focus();
+    if (tab === "passphrase" && entries.length) passphrase.focus();
 }
 
 function appendLine(area: HTMLTextAreaElement, line: string) {
     const v = area.value;
     area.value = (v && !v.endsWith("\n") ? v + "\n" : v) + line + "\n";
+}
+
+// ---------------------------------------------------------------- dialogs
+
+function showInfo(title: string, text: string) {
+    $("infoTitle").textContent = title;
+    $("infoText").textContent = text;
+    $("infoDialog").hidden = false;
+    $("infoClose").focus();
 }
 
 // ---------------------------------------------------------------- the job
@@ -232,25 +319,50 @@ async function run() {
     try {
         busy = true;
         lastSummary = "";
+        setNotes("");
         setProgress(0);
+        for (const e of entries) if (e.status === "failed") { e.status = "ready"; e.error = undefined; }
+        renderList();
         refresh();
-        setBox("");
         await SageService.Start(request(true) as any);
     } catch (err: any) {
         busy = false;
-        appendBox("Could not start: " + (err?.message ?? err));
+        setNotes("Could not start: " + (err?.message ?? err), true);
+        renderList();
         refresh();
     }
 }
 
-Events.On("job:log", ev => appendBox(ev.data as string));
+function applyResult(r: any) {
+    const e = entries.find(x => x.path === r.path);
+    if (!e) return;
+    if (r.ok) {
+        e.status = "done";
+        e.output = r.output;
+        e.error = undefined;
+    } else {
+        e.status = "failed";
+        e.error = r.error;
+    }
+}
+
+Events.On("job:file", ev => {
+    applyResult(ev.data);
+    renderList();
+});
 
 Events.On("job:progress", ev => {
     const p = ev.data as any;
     const fraction = p.bytesTotal > 0 ? p.bytes / p.bytesTotal : (p.total ? p.done / p.total : 0);
     setProgress(Math.min(1, fraction));
     if (busy && p.current) {
-        hint.textContent = `Working on file ${Math.min(p.done + 1, p.total)} of ${p.total}: ${p.current}`;
+        const e = entries.find(x => x.path === p.current);
+        if (e && e.status !== "working") {
+            for (const x of entries) if (x.status === "working") x.status = "ready";
+            e.status = "working";
+            renderList();
+        }
+        hint.textContent = `Working on file ${Math.min(p.done + 1, p.total)} of ${p.total}: ${baseName(p.current)}`;
         hint.classList.remove("warn");
     }
 });
@@ -258,10 +370,10 @@ Events.On("job:progress", ev => {
 Events.On("job:done", ev => {
     const d = ev.data as any;
     busy = false;
-    files = d.remaining ?? [];
-    mode = files.length === 0 ? "" : (files.every(f => f.toLowerCase().endsWith(".age")) ? "decrypt" : "encrypt");
+    for (const r of d.results ?? []) applyResult(r);
+    for (const e of entries) if (e.status === "working") e.status = "ready"; // not reached (cancelled)
     lastSummary = d.summary;
-    if (files.length) appendBox(`${files.length} file(s) not done are still in the list.`);
+    renderList();
     refresh();
 });
 
@@ -285,12 +397,27 @@ for (const el of [recipients, recipientsFile, identities]) {
         fieldTimer = setTimeout(refresh, 200);
     });
 }
-for (const el of [armor, writeLog, pq]) {
+for (const el of [armor, pq]) {
     el.addEventListener("change", () => { saveSettingsSoon(); refresh(); });
 }
-$<HTMLInputElement>("showPass").onchange = e => {
-    const type = (e.target as HTMLInputElement).checked ? "text" : "password";
-    passphrase.type = confirmPass.type = type;
+
+function setPassVisible(show: boolean) {
+    passphrase.type = confirmPass.type = show ? "text" : "password";
+    showPass.setAttribute("aria-pressed", String(show));
+    showPass.title = show ? "Hide passphrase" : "Show passphrase";
+    showPass.setAttribute("aria-label", showPass.title);
+}
+showPass.onclick = () => setPassVisible(passphrase.type === "password");
+$("genPass").onclick = async () => {
+    try {
+        const p = await SageService.GeneratePassphrase();
+        passphrase.value = confirmPass.value = p;
+        setPassVisible(true);
+        setNotes("Generated a passphrase. Copy it and keep it somewhere safe: without it the files can't be decrypted.", true);
+        refresh();
+    } catch (err: any) {
+        setNotes("Could not generate a passphrase: " + (err?.message ?? err), true);
+    }
 };
 $("tabPassphrase").onclick = () => setTab("passphrase");
 $("tabRecipient").onclick = () => setTab("recipient");
@@ -301,17 +428,17 @@ $("addFolder").onclick = async () => {
     if (dir) addPaths([dir]);
 };
 $("clear").onclick = () => {
-    files = [];
-    mode = "";
+    entries = [];
     lastSummary = "";
     passphrase.value = confirmPass.value = "";
-    showWelcome();
+    setPassVisible(false);
+    setNotes("");
     setProgress(0, false);
+    renderList();
     refresh();
 };
 $("inspect").onclick = async () => {
-    setBox(await SageService.Inspect(files));
-    appendBox(`\n${files.length} file(s) still in the list.`);
+    showInfo("Inspect", await SageService.Inspect(entries.map(e => e.path)));
 };
 $("browseRecipients").onclick = async () => {
     const p = await SageService.ChooseRecipientsFile();
@@ -333,18 +460,20 @@ $("keygen").onclick = async () => {
             .filter(l => l && !l.startsWith("#"));
         const mixes = existing.some(l => isPQ(l) !== isPQ(kp.publicKey));
         if (!mixes) appendLine(recipients, kp.publicKey);
-        setBox([
-            `New identity saved to ${kp.path}`,
+        showInfo("New key pair", [
+            `Saved to ${kp.path}`,
+            "",
             mixes
                 ? "Its public key was NOT added to 'Encrypt to': post-quantum and classic keys can't be mixed in one file. It is in the key file, on the '# public key:' line."
                 : "Its public key was added to 'Encrypt to'.",
-            "Keep the identity file secret and backed up.",
+            "",
+            "Keep the identity file secret and backed up: without it, files encrypted to its public key can't be decrypted.",
         ].join("\n"));
         saveSettingsSoon();
         refresh();
     } catch (err: any) {
         const msg = String(err?.message ?? err);
-        if (!msg.includes("cancelled")) setBox("Key generation failed: " + msg);
+        if (!msg.includes("cancelled")) showInfo("Key generation failed", msg);
     }
 };
 $("help").onclick = () => { $("helpDialog").hidden = false; };
@@ -356,6 +485,12 @@ $("about").onclick = async () => {
 $("aboutClose").onclick = () => { $("aboutDialog").hidden = true; };
 $("adminChip").onclick = () => { $("adminDialog").hidden = false; $("adminClose").focus(); };
 $("adminClose").onclick = () => { $("adminDialog").hidden = true; };
+$("infoClose").onclick = () => { $("infoDialog").hidden = true; };
+// Esc closes whichever dialog is open.
+document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    for (const id of ["infoDialog", "helpDialog", "aboutDialog", "adminDialog"]) $(id).hidden = true;
+});
 // Links open in the default browser, not inside the app window.
 document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     a.onclick = e => { e.preventDefault(); Browser.OpenURL(a.dataset.url!); };
@@ -364,19 +499,18 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
 // ---------------------------------------------------------------- start
 
 (async () => {
+    renderList();
     const st = await SageService.LoadSettings();
     recipients.value = st.recipients ? st.recipients + "\n" : "";
     recipientsFile.value = st.recipientsFile ?? "";
     identities.value = st.identities ? st.identities + "\n" : "";
     armor.checked = st.armor;
-    writeLog.checked = st.writeLog;
     pq.checked = st.postQuantum;
-    settingsNotice = st.notice ?? "";
-    showWelcome();
+    if (st.notice) setNotes(st.notice, true);
     setProgress(0, false);
     setTab(st.activeTab === "recipient" ? "recipient" : "passphrase", false);
     // Running as administrator: a warning dialog at start (like About), and an "Admin"
-    // pill in the header that reopens it, so a later blocked drag still has an explanation.
+    // pill in the toolbar that reopens it, so a later blocked drag still has an explanation.
     const adminWarning = await SageService.AdminWarning();
     if (adminWarning) {
         // The app's name in bold: "<b>sage</b> is running as administrator. ... Close <b>sage</b> and ..."
