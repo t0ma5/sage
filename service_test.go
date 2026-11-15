@@ -268,7 +268,7 @@ func TestExpandPaths(t *testing.T) {
 	if skipped != 1 {
 		t.Fatalf("one subfolder should be reported as skipped, got %d", skipped)
 	}
-	if len(problems) != 1 || !strings.Contains(problems[0].text, "missing: not found") || problems[0].driveMissing {
+	if len(problems) != 1 || !strings.Contains(problems[0], "missing: not found") {
 		t.Fatalf("the missing path should be reported as not found: %+v", problems)
 	}
 	wd, _ := os.Getwd()
@@ -297,10 +297,16 @@ func TestAddPathsExplainsUnreadable(t *testing.T) {
 	s := &SageService{}
 	path := missingDrive + `\vault\file.txt`
 
+	// Even when elevated, the note gives only the reason: the admin warning is a
+	// permanent line in the window, not repeated in notes.
 	runningElevated = func() bool { return true }
 	res := s.AddPaths(nil, []string{path})
 	if res.Note != "No files could be added:\n  "+path+": drive "+missingDrive+" isn't available to sage." {
-		t.Fatalf("note: %q", res.Note) // the admin warning is a permanent line in the window, not repeated here
+		t.Fatalf("note: %q", res.Note)
+	}
+	// The same drive behind the long-path prefix is still a drive, not a network share.
+	if got := describeAddError(`\\?\`+path, os.ErrNotExist); got != `\\?\`+path+": drive "+missingDrive+" isn't available to sage." {
+		t.Fatalf("long path: %q", got)
 	}
 	// The owner's exact wording.
 	const want = "Warning: sage is running as administrator. Windows hides drives mapped by your normal account from it, " +
@@ -344,18 +350,27 @@ func TestDescribeAddError(t *testing.T) {
 		{&os.PathError{Op: "stat", Path: p, Err: errors.New("boom")}, p + ": can't be read (boom)."},
 	}
 	for _, c := range cases {
-		if got := describeAddError(p, c.err); got.text != c.want || got.driveMissing {
-			t.Errorf("%v: got %+v", c.err, got)
+		if got := describeAddError(p, c.err); got != c.want {
+			t.Errorf("%v: got %q", c.err, got)
 		}
 	}
 	if runtime.GOOS != "windows" {
 		return
 	}
-	// An unreachable share is the server's problem, not a hidden drive: no admin hint, no extra network stat.
+	// An unreachable share is the server's problem, not a hidden drive: no extra network stat.
 	unc := `\\nas\share\a.txt`
-	got := describeAddError(unc, &os.PathError{Op: "stat", Path: unc, Err: syscall.Errno(53)})
-	if got.text != unc+`: network share \\nas\share isn't reachable.` || got.driveMissing {
-		t.Errorf("UNC: %+v", got)
+	for _, code := range []syscall.Errno{53, 64, 67, 1222} {
+		got := describeAddError(unc, &os.PathError{Op: "stat", Path: unc, Err: code})
+		if got != unc+`: network share \\nas\share isn't reachable.` {
+			t.Errorf("UNC errno %d: %q", code, got)
+		}
+	}
+	longUNC := `\\?\UNC\nas\share\a.txt`
+	if got := describeAddError(longUNC, syscall.Errno(53)); got != longUNC+`: network share \\nas\share isn't reachable.` {
+		t.Errorf("long UNC: %q", got)
+	}
+	if withoutLongPrefix(longUNC) != unc || withoutLongPrefix(`\\?\C:\x`) != `C:\x` || withoutLongPrefix(`C:\x`) != `C:\x` {
+		t.Error("withoutLongPrefix")
 	}
 }
 

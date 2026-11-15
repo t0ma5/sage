@@ -547,26 +547,31 @@ func processFile(ctx context.Context, path string, encrypt bool, recipients []ag
 // runningElevated is isElevated, replaceable in tests.
 var runningElevated = isElevated
 
-// addProblem is a dropped or chosen path that couldn't be read, and why.
-type addProblem struct {
-	text string
-	// driveMissing: the path's drive isn't visible to sage at all.
-	driveMissing bool
+// withoutLongPrefix drops the \\?\ long-path prefix (\\?\UNC\server\share -> \\server\share),
+// so a \\?\Q:\ path is seen as drive Q:, not as a network share.
+func withoutLongPrefix(p string) string {
+	switch {
+	case strings.HasPrefix(p, `\\?\UNC\`):
+		return `\\` + p[len(`\\?\UNC\`):]
+	case strings.HasPrefix(p, `\\?\`):
+		return p[len(`\\?\`):]
+	}
+	return p
 }
 
 // describeAddError says why a path can't be added, in words a user can act on.
-func describeAddError(path string, err error) addProblem {
-	vol := filepath.VolumeName(path)
+func describeAddError(path string, err error) string {
+	vol := filepath.VolumeName(withoutLongPrefix(path))
 	switch {
 	case strings.HasPrefix(vol, `\\`):
 		// A network share (\\server\share): the server or share is the problem, not a
 		// hidden drive. Decided from the error alone, so there's no second network timeout.
 		if isNetUnreachable(err) {
-			return addProblem{text: fmt.Sprintf("%s: network share %s isn't reachable.", path, vol)}
+			return fmt.Sprintf("%s: network share %s isn't reachable.", path, vol)
 		}
 	case vol != "":
 		if _, volErr := os.Stat(vol + string(filepath.Separator)); volErr != nil {
-			return addProblem{text: fmt.Sprintf("%s: drive %s isn't available to sage.", path, vol), driveMissing: true}
+			return fmt.Sprintf("%s: drive %s isn't available to sage.", path, vol)
 		}
 	}
 	var pe *os.PathError
@@ -575,23 +580,23 @@ func describeAddError(path string, err error) addProblem {
 	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return addProblem{text: fmt.Sprintf("%s: not found (moved or deleted?).", path)}
+		return fmt.Sprintf("%s: not found (moved or deleted?).", path)
 	case errors.Is(err, os.ErrPermission):
-		return addProblem{text: fmt.Sprintf("%s: access denied.", path)}
+		return fmt.Sprintf("%s: access denied.", path)
 	}
-	return addProblem{text: fmt.Sprintf("%s: can't be read (%v).", path, err)}
+	return fmt.Sprintf("%s: can't be read (%v).", path, err)
 }
 
 // expandPaths turns dropped or chosen paths into absolute file paths. A folder
 // adds the files directly inside it (following links to files); subfolders are
 // not included and are counted, so the window can say so. Paths that can't be
 // read are returned with the reason.
-func expandPaths(paths []string) (files []string, skippedDirs int, problems []addProblem) {
+func expandPaths(paths []string) (files []string, skippedDirs int, problems []string) {
 	var out []string
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
-			problems = append(problems, addProblem{text: fmt.Sprintf("%s: not a valid path.", p)})
+			problems = append(problems, fmt.Sprintf("%s: not a valid path.", p))
 			continue
 		}
 		info, err := os.Stat(abs)

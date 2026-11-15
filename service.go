@@ -318,11 +318,11 @@ func (s *SageService) AddPaths(existing, added []string) AddResult {
 
 // problemLines lists unreadable paths, at most 5. (When sage runs as administrator
 // the window shows a permanent warning line, so it isn't repeated here.)
-func problemLines(problems []addProblem) string {
+func problemLines(problems []string) string {
 	var b strings.Builder
 	for i, p := range problems {
 		if i < 5 {
-			b.WriteString("  " + p.text + "\n")
+			b.WriteString("  " + p + "\n")
 		}
 	}
 	if len(problems) > 5 {

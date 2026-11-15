@@ -60,6 +60,7 @@ function addLines(text: string) {
 // Copying from the box gives the lines with their indentation, without bullets.
 box.addEventListener("copy", e => {
     const text = document.getSelection()?.toString() ?? "";
+    if (!text) return; // nothing selected: leave the clipboard alone
     e.clipboardData?.setData("text/plain", text.replace(/^([ \t]*)• /gm, "$1"));
     e.preventDefault();
 });
@@ -230,6 +231,9 @@ async function run() {
     if (busy || actionBtn.disabled) return;
     try {
         busy = true;
+        // Screen readers: hold the log's announcements until the job ends, then read the
+        // result, instead of reading every line of every file as it's written.
+        box.setAttribute("aria-busy", "true");
         lastSummary = "";
         setProgress(0);
         refresh();
@@ -237,6 +241,7 @@ async function run() {
         await SageService.Start(request(true) as any);
     } catch (err: any) {
         busy = false;
+        box.removeAttribute("aria-busy");
         appendBox("Could not start: " + (err?.message ?? err));
         refresh();
     }
@@ -257,6 +262,7 @@ Events.On("job:progress", ev => {
 Events.On("job:done", ev => {
     const d = ev.data as any;
     busy = false;
+    box.removeAttribute("aria-busy");
     files = d.remaining ?? [];
     mode = files.length === 0 ? "" : (files.every(f => f.toLowerCase().endsWith(".age")) ? "decrypt" : "encrypt");
     lastSummary = d.summary;
