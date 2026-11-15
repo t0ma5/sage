@@ -1,0 +1,11 @@
+.task
+.wails
+bin
+frontend/dist
+frontend/node_modules
+frontend/bindings
+
+# Personal files written next to sage.exe.
+sageSettings.json
+sageSettings.json.*
+log.txt

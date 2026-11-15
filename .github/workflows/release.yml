@@ -1,0 +1,130 @@
+# Builds sage for Windows x64 (amd64) and ARM64 and attaches both to a draft
+# GitHub release. Runs when a version tag is pushed (git tag v0.1.0 && git push
+# origin v0.1.0); it can also be started by hand to get the zips as artifacts.
+#
+# sage is pure Go (no cgo), so one Windows runner builds both architectures.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AGE_VERSION: v1.3.2
+  # SHA-256 of age's official age-v1.3.2-windows-amd64.zip (matches GitHub's
+  # published digest). Used only by the interop tests, not shipped.
+  AGE_WINDOWS_AMD64_SHA256: f48d8f8f9ebe903ab5027ed067652f2cc1db94bc206976430133b905dcd8e8c7
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the Wails CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+
+      - name: Check the tag matches the version in the app
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not (Select-String -Path service.go -Quiet -Pattern "appTitle\s*=\s*`"sage $([regex]::Escape($tag))`"")) {
+            throw "Tag $tag does not match appTitle in service.go; update it before tagging."
+          }
+
+      - name: Build x64 (amd64)
+        run: |
+          wails3 task windows:build ARCH=amd64
+          New-Item -ItemType Directory -Force out\amd64 | Out-Null
+          Move-Item bin\sage.exe out\amd64\sage.exe
+
+      - name: Build ARM64
+        run: |
+          wails3 task windows:build ARCH=arm64
+          New-Item -ItemType Directory -Force out\arm64 | Out-Null
+          Move-Item bin\sage.exe out\arm64\sage.exe
+
+      - name: Get the official age CLI for the interop tests (checksum pinned)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "age-$env:AGE_VERSION-windows-amd64.zip"
+          gh release download $env:AGE_VERSION -R FiloSottile/age -p $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:AGE_WINDOWS_AMD64_SHA256) { throw "Checksum mismatch for ${zip}: $hash" }
+          Expand-Archive $zip -DestinationPath agecli
+          "SAGE_TEST_AGE=$pwd\agecli\age\age.exe" >> $env:GITHUB_ENV
+
+      - name: Test (interop with age.exe required)
+        env:
+          SAGE_REQUIRE_INTEROP: "1"
+        run: go test ./...
+
+      - name: Package the zips
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "dev" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($arch in "amd64", "arm64") {
+            $dir = "pkg\sage-$version-windows-$arch"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            Copy-Item "out\$arch\sage.exe" $dir
+            Copy-Item README.md $dir
+            if (Test-Path LICENSE) { Copy-Item LICENSE $dir }
+            Compress-Archive -Path "$dir\*" -DestinationPath "dist\sage-$version-windows-$arch.zip"
+          }
+          Get-ChildItem dist\*.zip | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Out-File -Encoding ascii dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sage-windows
+          path: dist/*
+          if-no-files-found: error
+
+  # Separate job, so the long build job never holds write permissions.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the release
+      id-token: write      # sign the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sage-windows
+          path: dist
+
+      # The exes aren't code-signed. This records which workflow, commit and repo
+      # built each zip; check with: gh attestation verify <zip> --repo t0ma5/sage
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.zip
+
+      - name: Create a draft release with the zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/* \
+            --draft \
+            --title "sage ${{ github.ref_name }}" \
+            --notes "Portable sage for Windows 10/11. Download sage-${{ github.ref_name }}-windows-amd64.zip for x64 PCs or ...-arm64.zip for ARM64 PCs, unzip, run sage.exe. Checksums are in SHA256SUMS.txt."

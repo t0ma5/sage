@@ -1,0 +1,271 @@
+/* Dark theme. The accent is sage green, the colour of the app icon. */
+:root {
+    --bg: #242424;
+    --card: #2b2b2b;
+    --field: #343638;
+    --box: #1d1e1e;
+    --border: #565b5e;
+    --text: #dce4ee;
+    --muted: #a6a6a6;
+    --warn: #f0a040;
+    --accent: #4c8c5c;       /* icon green: buttons, active tab, ticked boxes */
+    --accent-hover: #3b7049;
+    --focus: #79b889;        /* lighter green: focus outlines, drop target, progress */
+    --secondary: #474747;
+    --secondary-hover: #595959;
+    --danger: #8b2c2c;
+    --danger-hover: #a33a3a;
+    --badge-encrypt: #8ac498;  /* light sage green */
+    --badge-decrypt: #f0b050;  /* amber */
+    --ui: "Segoe UI", system-ui, sans-serif;
+    --mono: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 var(--ui);
+    user-select: none;
+}
+
+.app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+[hidden] { display: none !important; }
+
+/* ---------------- buttons and fields ---------------- */
+
+.btn {
+    font: 13px var(--ui);
+    color: #fff;
+    background: var(--accent);
+    border: 0;
+    border-radius: 6px;
+    padding: 0 14px;
+    height: 30px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--accent-hover); }
+.btn.secondary { background: var(--secondary); }
+.btn.secondary:hover:not(:disabled) { background: var(--secondary-hover); }
+.btn.danger { background: var(--danger); }
+.btn.danger:hover:not(:disabled) { background: var(--danger-hover); }
+.btn.small { width: 28px; padding: 0; font-weight: 700; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { height: 40px; min-width: 200px; font-size: 15px; font-weight: 700; }
+
+input[type=text], input[type=password], textarea {
+    font: 14px var(--ui);
+    color: var(--text);
+    background: var(--field);
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    outline: none;
+    user-select: text;
+}
+input:focus, textarea:focus { border-color: var(--focus); }
+input:disabled, textarea:disabled { opacity: .5; }
+textarea {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.4;
+    height: calc(2 * 1.4em + 16px); /* exactly two lines; a scrollbar only appears for more */
+    resize: none;
+    background: var(--box);
+    width: 100%;
+}
+.row strong { white-space: nowrap; }
+.row .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+input.mono { font-family: var(--mono); font-size: 13px; }
+
+.check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; white-space: nowrap; }
+/* Dark checkboxes like page's, instead of the browser's white ones. */
+.check input {
+    appearance: none;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    border: 2px solid var(--border);
+    border-radius: 5px;
+    background: transparent;
+    display: grid;
+    place-content: center;
+    cursor: pointer;
+}
+.check input:checked { background: var(--accent); border-color: var(--accent); }
+.check input:checked::after {
+    content: "";
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: translateY(-1px) rotate(45deg);
+}
+.check input:disabled { opacity: .45; cursor: default; }
+
+/* ---------------- files ---------------- */
+
+.files {
+    flex: 1;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 20px 0;
+}
+.files-header { display: flex; align-items: center; gap: 6px; }
+.files-header h1 { font-size: 16px; margin: 0 4px 0 0; }
+
+/* Mode badge: an outline pill, so it can't be mistaken for a (filled) button.
+   Encrypt uses the app colour, decrypt amber. */
+.badge {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .3px;
+    border: 1.5px solid currentColor;
+    border-radius: 999px;
+    padding: 1px 10px;
+    background: transparent;
+}
+.badge.encrypt { color: var(--badge-encrypt); }
+.badge.decrypt { color: var(--badge-decrypt); }
+
+.box {
+    flex: 1;
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    min-height: 0;
+    overflow: auto;
+    background: var(--box);
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    font: 13px/1.45 var(--mono);
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+}
+/* Wails adds this class while files are dragged over a drop target. */
+.files.file-drop-target-active .box { border-color: var(--focus); }
+
+/* ---------------- tabs card ---------------- */
+
+/* Both panels sit in the same grid cell, so the card is exactly as tall as the
+   taller one (Recipient) and switching tabs never moves anything. The inactive
+   panel is invisible but keeps its space. */
+.card {
+    margin: 22px 20px 0;
+    background: var(--card);
+    border-radius: 8px;
+    position: relative;
+    display: grid;
+    flex-shrink: 0;
+}
+.card > .panel { grid-area: 1 / 1; }
+.panel.passphrase[hidden], .panel.recipient[hidden] { display: flex !important; visibility: hidden; }
+.tabs {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    background: var(--secondary);
+    border-radius: 6px;
+    padding: 3px;
+    gap: 3px;
+}
+.tab {
+    font: 14px var(--ui);
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    width: 140px;
+    height: 26px;
+    cursor: pointer;
+}
+.tab.active { background: var(--accent); }
+.tab:disabled { cursor: default; }
+
+.panel { padding: 26px 16px 14px; }
+.panel.passphrase {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.panel.passphrase p { margin: 0 0 6px; }
+.panel.passphrase input[type=password],
+.panel.passphrase input[type=text] { width: min(360px, 100%); height: 38px; }
+.panel.passphrase .check { width: min(360px, 100%); }
+
+.panel.recipient { display: flex; flex-direction: column; gap: 6px; }
+.row { display: flex; align-items: center; gap: 8px; }
+.row.gap-top { margin-top: 6px; }
+.grow { flex: 1; }
+
+/* ---------------- options and bottom bar ---------------- */
+
+.options {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    padding: 10px 0 12px;
+    flex-shrink: 0;
+}
+
+.bar { background: var(--card); padding: 12px 20px; flex-shrink: 0; }
+.progress { height: 6px; background: var(--secondary); border-radius: 3px; overflow: hidden; }
+.fill { height: 100%; width: 0; background: var(--focus); transition: width .15s; }
+.bar-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.hint { flex: 1; color: var(--muted); font-size: 13px; }
+.hint.warn { color: var(--warn); }
+
+/* ---------------- help dialog ---------------- */
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.modal-body {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 18px 22px;
+    max-width: 520px;
+    max-height: 90%;
+    overflow: auto;
+    user-select: text;
+}
+.modal-body h2 { margin: 0 0 8px; font-size: 16px; }
+.modal-body p { margin: 0 0 10px; }
+.modal-body code { font-family: var(--mono); font-size: 12px; }
+.modal-actions { text-align: right; }
+.modal-actions .btn.primary { min-width: 100px; height: 32px; font-size: 14px; }
+
+/* ---------------- about dialog ---------------- */
+
+.about { text-align: center; min-width: 320px; }
+.about-icon { width: 72px; height: 72px; margin: 4px auto 6px; display: block; }
+.about-title { font-size: 22px; margin: 0; }
+.about-title .muted { font-size: 14px; font-weight: 400; }
+.about-sub { font-size: 15px; margin: 4px 0 14px; }
+.about-small { font-size: 13px; }
+.about a { color: var(--focus); text-decoration: none; cursor: pointer; }
+.about a:hover { text-decoration: underline; }
+.about .modal-actions { text-align: center; margin-top: 6px; }

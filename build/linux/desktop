@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=sage
+Comment=Simple GUI for age file encryption
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/sage.exe %u
+Terminal=false
+Type=Application
+Icon=sage.exe
+Categories=Utility;
+StartupWMClass=sage.exe
+
+ 

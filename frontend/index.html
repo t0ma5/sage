@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>sage</title>
+</head>
+<body>
+<div class="app">
+    <section class="files" data-file-drop-target>
+        <header class="files-header">
+            <h1>Files</h1>
+            <span id="badge" class="badge" hidden></span>
+            <div class="spacer"></div>
+            <button id="addFiles" class="btn">Add files</button>
+            <button id="addFolder" class="btn secondary">Add folder</button>
+            <button id="clear" class="btn secondary">Clear</button>
+            <button id="inspect" class="btn secondary">Inspect</button>
+            <button id="about" class="btn secondary small" title="About sage">i</button>
+        </header>
+        <pre id="box" class="box" tabindex="0"></pre>
+    </section>
+
+    <section class="card">
+        <div class="tabs" role="tablist">
+            <button id="tabPassphrase" role="tab" class="tab">Passphrase</button>
+            <button id="tabRecipient" role="tab" class="tab">Recipient</button>
+        </div>
+
+        <div id="panelPassphrase" class="panel passphrase">
+            <p class="muted">For files encrypted with a passphrase (age -p).</p>
+            <input id="passphrase" type="password" placeholder="Passphrase" autocomplete="off" spellcheck="false"/>
+            <input id="confirm" type="password" placeholder="Repeat passphrase" autocomplete="off" spellcheck="false"/>
+            <label class="check"><input id="showPass" type="checkbox"/> Show passphrase</label>
+        </div>
+
+        <div id="panelRecipient" class="panel recipient" hidden>
+            <div class="row">
+                <strong>Encrypt to</strong>
+                <span class="muted">public keys, one per line &middot; # comment</span>
+                <div class="spacer"></div>
+                <button id="help" class="btn secondary small" title="Help">?</button>
+            </div>
+            <textarea id="recipients" rows="2" spellcheck="false" wrap="off"></textarea>
+            <div class="row">
+                <input id="recipientsFile" type="text" class="mono grow" placeholder="...and/or a recipients file (-R)" spellcheck="false"/>
+                <button id="browseRecipients" class="btn secondary">Browse...</button>
+            </div>
+            <div class="row gap-top">
+                <strong>Decrypt with</strong>
+                <span class="muted">identity (secret key) files, one path per line</span>
+                <div class="spacer"></div>
+                <button id="addIdentity" class="btn secondary">Add file...</button>
+            </div>
+            <textarea id="identities" rows="2" spellcheck="false" wrap="off"></textarea>
+            <div class="row">
+                <button id="keygen" class="btn secondary">Generate new key pair</button>
+                <label class="check"><input id="pq" type="checkbox"/> Post-quantum (-pq)</label>
+            </div>
+        </div>
+    </section>
+
+    <div class="options">
+        <label class="check"><input id="armor" type="checkbox"/> ASCII armor output (-a)</label>
+        <label class="check"><input id="writeLog" type="checkbox"/> Write log.txt</label>
+    </div>
+
+    <footer class="bar">
+        <div class="progress"><div id="progressFill" class="fill"></div></div>
+        <div class="bar-row">
+            <span id="hint" class="hint"></span>
+            <button id="cancel" class="btn danger" hidden>Cancel</button>
+            <button id="action" class="btn primary" disabled>Encrypt</button>
+        </div>
+    </footer>
+</div>
+
+<div id="helpDialog" class="modal" hidden>
+    <div class="modal-body">
+        <h2>Recipient mode</h2>
+        <p><strong>Encrypt:</strong> needs at least one recipient or a recipients file. A recipient is an age public key (<code>age1...</code>, post-quantum <code>age1pq1...</code>) or an SSH public key (<code>ssh-ed25519 ...</code>, <code>ssh-rsa ...</code>). Everyone listed can decrypt the file. Post-quantum and classic keys can't be mixed in one file.</p>
+        <p><strong>Decrypt:</strong> needs at least one identity file holding secret keys (<code>AGE-SECRET-KEY-1...</code>) or an SSH private key. Unused ones are ignored.</p>
+        <p><strong>Generate new key pair</strong> creates an identity file and adds it here together with its public key. Keep that file secret and backed up: without it, files encrypted to its public key cannot be decrypted.</p>
+        <p><strong>Not supported yet:</strong> age plugins, passphrase-protected identity files and passphrase-protected SSH keys.</p>
+        <div class="modal-actions"><button id="helpClose" class="btn primary">Close</button></div>
+    </div>
+</div>
+
+<div id="aboutDialog" class="modal" hidden>
+    <div class="modal-body about">
+        <img src="/appicon.png" alt="" class="about-icon"/>
+        <h2 class="about-title">sage <span id="aboutVersion" class="muted"></span></h2>
+        <p class="about-sub">Simple GUI for <strong>age</strong></p>
+        <p><a href="#" data-url="https://github.com/t0ma5/sage">github.com/t0ma5/sage</a></p>
+        <p class="muted about-small">Encryption by the official age library:<br/>
+            <a href="#" data-url="https://github.com/FiloSottile/age">github.com/FiloSottile/age</a></p>
+        <div class="modal-actions"><button id="aboutClose" class="btn primary">Close</button></div>
+    </div>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
