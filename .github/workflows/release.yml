@@ -100,9 +100,11 @@ jobs:
             Copy-Item THIRD_PARTY_LICENSES.txt $dir
             Compress-Archive -Path "$dir\*" -DestinationPath "dist\sage-$version-windows-$arch.zip"
           }
-          Get-ChildItem dist\*.zip | ForEach-Object {
+          # LF line endings, so `sha256sum -c` works on Linux and macOS too.
+          $sums = Get-ChildItem dist\*.zip | ForEach-Object {
             "{0}  {1}" -f (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower(), $_.Name
-          } | Out-File -Encoding ascii dist\SHA256SUMS.txt
+          }
+          [IO.File]::WriteAllText("$pwd\dist\SHA256SUMS.txt", (($sums -join "`n") + "`n"))
           Get-Content dist\SHA256SUMS.txt
 
       - uses: actions/upload-artifact@v4
