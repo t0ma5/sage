@@ -60,3 +60,10 @@ func longPath(p string) string {
 	}
 	return `\\?\` + p
 }
+
+// isElevated reports whether sage runs as administrator. It then can't see drives
+// mapped by the user's normal session (network drives, Cryptomator vaults), and
+// Windows may block drag and drop from Explorer.
+func isElevated() bool {
+	return windows.GetCurrentProcessToken().IsElevated()
+}

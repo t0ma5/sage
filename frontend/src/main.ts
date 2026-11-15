@@ -54,7 +54,9 @@ function showWelcome() {
 function showFiles(note = "") {
     const lines = files.map(f => {
         const i = Math.max(f.lastIndexOf("\\"), f.lastIndexOf("/"));
-        return `${f.slice(i + 1)}    (${f.slice(0, i)})`;
+        let dir = f.slice(0, i);
+        if (/^[A-Za-z]:$/.test(dir)) dir += "\\"; // a drive root is "F:\" ("F:" alone means the current folder there)
+        return `${f.slice(i + 1)}    (${dir})`;
     });
     setBox(lines.join("\n") + (note ? "\n" + note : ""));
     setProgress(0, false);
@@ -330,5 +332,7 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     setProgress(0, false);
     setTab(st.activeTab === "recipient" ? "recipient" : "passphrase", false);
     if (st.notice) appendBox("\n" + st.notice);
+    const adminWarning = await SageService.AdminWarning();
+    if (adminWarning) appendBox("\n" + adminWarning);
     addPaths(await SageService.LaunchPaths());
 })();

@@ -544,18 +544,51 @@ func processFile(ctx context.Context, path string, encrypt bool, recipients []ag
 
 // ---------------------------------------------------------------- file list
 
+// runningElevated is isElevated, replaceable in tests.
+var runningElevated = isElevated
+
+// addProblem is a dropped or chosen path that couldn't be read, and why.
+type addProblem struct {
+	text string
+	// driveMissing: the path's drive isn't visible to sage at all.
+	driveMissing bool
+}
+
+// describeAddError says why a path can't be added, in words a user can act on.
+func describeAddError(path string, err error) addProblem {
+	if vol := filepath.VolumeName(path); vol != "" {
+		if _, volErr := os.Stat(vol + string(filepath.Separator)); volErr != nil {
+			return addProblem{text: fmt.Sprintf("%s: drive %s isn't available to sage.", path, vol), driveMissing: true}
+		}
+	}
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err // drop Go's "GetFileAttributesEx path:" prefix
+	}
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return addProblem{text: fmt.Sprintf("%s: not found (moved or deleted?).", path)}
+	case errors.Is(err, os.ErrPermission):
+		return addProblem{text: fmt.Sprintf("%s: access denied.", path)}
+	}
+	return addProblem{text: fmt.Sprintf("%s: can't be read (%v).", path, err)}
+}
+
 // expandPaths turns dropped or chosen paths into absolute file paths. A folder
 // adds the files directly inside it (following links to files); subfolders are
-// not included and are counted, so the window can say so.
-func expandPaths(paths []string) (files []string, skippedDirs int) {
+// not included and are counted, so the window can say so. Paths that can't be
+// read are returned with the reason.
+func expandPaths(paths []string) (files []string, skippedDirs int, problems []addProblem) {
 	var out []string
 	for _, p := range paths {
 		abs, err := filepath.Abs(p)
 		if err != nil {
+			problems = append(problems, addProblem{text: fmt.Sprintf("%s: not a valid path.", p)})
 			continue
 		}
 		info, err := os.Stat(abs)
 		if err != nil {
+			problems = append(problems, describeAddError(abs, err))
 			continue
 		}
 		if !info.IsDir() {
@@ -564,6 +597,7 @@ func expandPaths(paths []string) (files []string, skippedDirs int) {
 		}
 		entries, err := os.ReadDir(abs)
 		if err != nil {
+			problems = append(problems, describeAddError(abs, err))
 			continue
 		}
 		var names []string
@@ -582,7 +616,7 @@ func expandPaths(paths []string) (files []string, skippedDirs int) {
 			out = append(out, filepath.Join(abs, n))
 		}
 	}
-	return out, skippedDirs
+	return out, skippedDirs, problems
 }
 
 // mergeFiles adds new files to the list. If any .age file is present, the list

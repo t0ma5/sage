@@ -284,9 +284,13 @@ func (s *SageService) logLine(text string) {
 
 // AddPaths adds dropped or chosen paths to the list.
 func (s *SageService) AddPaths(existing, added []string) AddResult {
-	expanded, skippedDirs := expandPaths(added)
+	expanded, skippedDirs, problems := expandPaths(added)
 	if len(expanded) == 0 {
-		return AddResult{Files: existing, Mode: modeOf(existing), Note: "No files found in what was added."}
+		note := "No files found in what was added."
+		if len(problems) > 0 {
+			note = "No files could be added:\n" + problemLines(problems)
+		}
+		return AddResult{Files: existing, Mode: modeOf(existing), Note: note}
 	}
 	files, mode, ignored, duplicates := mergeFiles(existing, expanded)
 	note := ""
@@ -303,7 +307,44 @@ func (s *SageService) AddPaths(existing, added []string) AddResult {
 		}
 		note += sub
 	}
+	if len(problems) > 0 {
+		if note != "" {
+			note += "\n"
+		}
+		note += "Not added:\n" + problemLines(problems)
+	}
 	return AddResult{Files: files, Mode: mode, Note: note}
+}
+
+// problemLines lists unreadable paths (at most 5) and, when a drive is missing
+// because sage runs as administrator, says so once.
+func problemLines(problems []addProblem) string {
+	var b strings.Builder
+	driveMissing := false
+	for i, p := range problems {
+		driveMissing = driveMissing || p.driveMissing
+		if i < 5 {
+			b.WriteString("  " + p.text + "\n")
+		}
+	}
+	if len(problems) > 5 {
+		fmt.Fprintf(&b, "  ...and %d more.\n", len(problems)-5)
+	}
+	if driveMissing && runningElevated() {
+		b.WriteString(adminWarning + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+const adminWarning = "Warning: sage is running as administrator. Windows hides drives mapped by your normal account from it, " +
+	"also blocks drag & drop from Explorer. Close sage and start it normally."
+
+// AdminWarning returns a warning when sage runs as administrator, for the window to show at start.
+func (s *SageService) AdminWarning() string {
+	if runningElevated() {
+		return adminWarning
+	}
+	return ""
 }
 
 func modeOf(files []string) string {

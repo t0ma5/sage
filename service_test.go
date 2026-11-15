@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -257,18 +258,64 @@ func TestExpandPaths(t *testing.T) {
 	write(t, filepath.Join(dir, "a.txt"), "a")
 	os.Mkdir(filepath.Join(dir, "sub"), 0o700)
 	write(t, filepath.Join(dir, "sub", "c.txt"), "c")
-	got, skipped := expandPaths([]string{dir, filepath.Join(dir, "missing")})
+	got, skipped, problems := expandPaths([]string{dir, filepath.Join(dir, "missing")})
 	if len(got) != 2 || filepath.Base(got[0]) != "a.txt" || filepath.Base(got[1]) != "b.txt" {
 		t.Fatalf("folder should add its own files, sorted, no subfolders: %v", got)
 	}
 	if skipped != 1 {
 		t.Fatalf("one subfolder should be reported as skipped, got %d", skipped)
 	}
+	if len(problems) != 1 || !strings.Contains(problems[0].text, "missing: not found") || problems[0].driveMissing {
+		t.Fatalf("the missing path should be reported as not found: %+v", problems)
+	}
 	wd, _ := os.Getwd()
 	defer os.Chdir(wd)
 	os.Chdir(dir)
-	if got, _ := expandPaths([]string{"a.txt"}); len(got) != 1 || !filepath.IsAbs(got[0]) {
+	if got, _, _ := expandPaths([]string{"a.txt"}); len(got) != 1 || !filepath.IsAbs(got[0]) {
 		t.Fatalf("relative path not made absolute: %v", got)
+	}
+}
+
+// A dropped file on a drive sage can't see (a vault mapped by the normal account
+// while sage runs as administrator) is explained instead of "No files found".
+func TestAddPathsExplainsUnreadable(t *testing.T) {
+	missingDrive := ""
+	for c := 'Z'; c >= 'G'; c-- {
+		if _, err := os.Stat(string(c) + `:\`); err != nil {
+			missingDrive = string(c) + ":"
+			break
+		}
+	}
+	if runtime.GOOS != "windows" || missingDrive == "" {
+		t.Skip("needs Windows and a free drive letter")
+	}
+	old := runningElevated
+	defer func() { runningElevated = old }()
+	s := &SageService{}
+	path := missingDrive + `\vault\file.txt`
+
+	runningElevated = func() bool { return true }
+	res := s.AddPaths(nil, []string{path})
+	if !strings.HasPrefix(res.Note, "No files could be added:") || !strings.Contains(res.Note, "drive "+missingDrive+" isn't available") ||
+		!strings.Contains(res.Note, "running as administrator") {
+		t.Fatalf("note: %q", res.Note)
+	}
+	if s.AdminWarning() == "" {
+		t.Fatal("AdminWarning should warn when elevated")
+	}
+
+	runningElevated = func() bool { return false }
+	res = s.AddPaths(nil, []string{path})
+	if strings.Contains(res.Note, "administrator") || s.AdminWarning() != "" {
+		t.Fatalf("no admin hint when not elevated: %q", res.Note)
+	}
+
+	// Some files readable, some not: the good ones are added and the rest listed.
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ok.txt"), "x")
+	res = s.AddPaths(nil, []string{filepath.Join(dir, "ok.txt"), filepath.Join(dir, "gone.txt")})
+	if len(res.Files) != 1 || !strings.Contains(res.Note, "Not added:") || !strings.Contains(res.Note, "gone.txt: not found") {
+		t.Fatalf("partial add: %+v", res)
 	}
 }
 
