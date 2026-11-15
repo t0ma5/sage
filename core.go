@@ -556,7 +556,15 @@ type addProblem struct {
 
 // describeAddError says why a path can't be added, in words a user can act on.
 func describeAddError(path string, err error) addProblem {
-	if vol := filepath.VolumeName(path); vol != "" {
+	vol := filepath.VolumeName(path)
+	switch {
+	case strings.HasPrefix(vol, `\\`):
+		// A network share (\\server\share): the server or share is the problem, not a
+		// hidden drive. Decided from the error alone, so there's no second network timeout.
+		if isNetUnreachable(err) {
+			return addProblem{text: fmt.Sprintf("%s: network share %s isn't reachable.", path, vol)}
+		}
+	case vol != "":
 		if _, volErr := os.Stat(vol + string(filepath.Separator)); volErr != nil {
 			return addProblem{text: fmt.Sprintf("%s: drive %s isn't available to sage.", path, vol), driveMissing: true}
 		}

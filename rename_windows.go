@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -61,9 +62,25 @@ func longPath(p string) string {
 	return `\\?\` + p
 }
 
-// isElevated reports whether sage runs as administrator. It then can't see drives
-// mapped by the user's normal session (network drives, Cryptomator vaults), and
-// Windows may block drag and drop from Explorer.
+// isElevated reports whether sage runs as administrator *with a normal session
+// alongside* (a UAC split token, TokenElevationTypeFull). Only then are drives
+// mapped by the normal session hidden from sage and drag and drop from Explorer
+// blocked. With UAC off, or the built-in Administrator account, there is no
+// normal session to switch to, so there is nothing to warn about.
 func isElevated() bool {
-	return windows.GetCurrentProcessToken().IsElevated()
+	var elevationType, size uint32
+	err := windows.GetTokenInformation(windows.GetCurrentProcessToken(), windows.TokenElevationType,
+		(*byte)(unsafe.Pointer(&elevationType)), uint32(unsafe.Sizeof(elevationType)), &size)
+	return err == nil && elevationType == 2 // TokenElevationTypeFull
+}
+
+// isNetUnreachable reports whether err means a network share can't be reached:
+// bad network path (53), network name deleted (64), bad network name (67), no network (1222).
+func isNetUnreachable(err error) bool {
+	for _, code := range []windows.Errno{53, 64, 67, 1222} {
+		if errors.Is(err, code) {
+			return true
+		}
+	}
+	return false
 }

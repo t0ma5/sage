@@ -6,10 +6,13 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"filippo.io/age"
@@ -296,18 +299,19 @@ func TestAddPathsExplainsUnreadable(t *testing.T) {
 
 	runningElevated = func() bool { return true }
 	res := s.AddPaths(nil, []string{path})
-	if !strings.HasPrefix(res.Note, "No files could be added:") || !strings.Contains(res.Note, "drive "+missingDrive+" isn't available") ||
-		!strings.Contains(res.Note, "running as administrator") {
-		t.Fatalf("note: %q", res.Note)
+	if res.Note != "No files could be added:\n  "+path+": drive "+missingDrive+" isn't available to sage." {
+		t.Fatalf("note: %q", res.Note) // the admin warning is a permanent line in the window, not repeated here
 	}
-	if s.AdminWarning() == "" {
-		t.Fatal("AdminWarning should warn when elevated")
+	// The owner's exact wording.
+	const want = "Warning: sage is running as administrator. Windows hides drives mapped by your normal account from it, " +
+		"also blocks drag & drop from Explorer. Close sage and start it normally."
+	if s.AdminWarning() != want {
+		t.Fatalf("AdminWarning: %q", s.AdminWarning())
 	}
 
 	runningElevated = func() bool { return false }
-	res = s.AddPaths(nil, []string{path})
-	if strings.Contains(res.Note, "administrator") || s.AdminWarning() != "" {
-		t.Fatalf("no admin hint when not elevated: %q", res.Note)
+	if s.AdminWarning() != "" {
+		t.Fatal("no warning when not elevated")
 	}
 
 	// Some files readable, some not: the good ones are added and the rest listed.
@@ -316,6 +320,42 @@ func TestAddPathsExplainsUnreadable(t *testing.T) {
 	res = s.AddPaths(nil, []string{filepath.Join(dir, "ok.txt"), filepath.Join(dir, "gone.txt")})
 	if len(res.Files) != 1 || !strings.Contains(res.Note, "Not added:") || !strings.Contains(res.Note, "gone.txt: not found") {
 		t.Fatalf("partial add: %+v", res)
+	}
+
+	// Long lists are cut at 5.
+	var many []string
+	for i := 0; i < 8; i++ {
+		many = append(many, filepath.Join(dir, fmt.Sprintf("gone%d.txt", i)))
+	}
+	res = s.AddPaths(nil, many)
+	if strings.Count(res.Note, "\n") != 6 || !strings.HasSuffix(res.Note, "  ...and 3 more.") {
+		t.Fatalf("cap: %q", res.Note)
+	}
+}
+
+func TestDescribeAddError(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "x.txt")
+	cases := []struct {
+		err  error
+		want string
+	}{
+		{&os.PathError{Op: "stat", Path: p, Err: os.ErrPermission}, p + ": access denied."},
+		{&os.PathError{Op: "stat", Path: p, Err: errors.New("boom")}, p + ": can't be read (boom)."},
+	}
+	for _, c := range cases {
+		if got := describeAddError(p, c.err); got.text != c.want || got.driveMissing {
+			t.Errorf("%v: got %+v", c.err, got)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		return
+	}
+	// An unreachable share is the server's problem, not a hidden drive: no admin hint, no extra network stat.
+	unc := `\\nas\share\a.txt`
+	got := describeAddError(unc, &os.PathError{Op: "stat", Path: unc, Err: syscall.Errno(53)})
+	if got.text != unc+`: network share \\nas\share isn't reachable.` || got.driveMissing {
+		t.Errorf("UNC: %+v", got)
 	}
 }
 

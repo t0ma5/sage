@@ -156,16 +156,16 @@ input.mono { font-family: var(--mono); font-size: 13px; }
     word-break: break-word;
     user-select: text;
 }
-/* One block per line: a bullet, and wrapped text indented under the first word. */
-.box .ln {
-    padding-left: 2ch;
-    text-indent: -2ch;
+/* One block per line; main.ts sets the hanging indent (padding-left / text-indent)
+   from the line's own indentation plus the bullet. */
+.box .bullet { user-select: none; }
+/* Permanent line shown only when sage runs as administrator. */
+.admin-banner {
+    margin: 6px 0 0;
+    color: var(--warn);
+    font-size: 12.5px;
+    line-height: 1.35;
 }
-/* "\2022 " is the bullet escape (its trailing space ends the escape); the second space follows it. */
-.box .ln::before { content: "\2022  "; white-space: pre; }
-.box .ln.sub { margin-left: 2ch; }
-.box .ln.blank { height: 1.45em; }
-.box .ln.blank::before { content: none; }
 /* Wails adds this class while files are dragged over a drop target. */
 .files.file-drop-target-active .box { border-color: var(--focus); }
 

@@ -7,7 +7,7 @@ import {SageService} from "../bindings/sage";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const box = $<HTMLPreElement>("box");
+const box = $<HTMLDivElement>("box");
 const badge = $("badge");
 const hint = $("hint");
 const actionBtn = $<HTMLButtonElement>("action");
@@ -30,22 +30,39 @@ let lastSummary = "";
 
 // ---------------------------------------------------------------- the box
 
-// Each line of the box is its own block: a bullet, and wrapped text indented under
-// it (CSS .ln), so it's clear where a line ends. A line starting with spaces is a
-// sub-item. The bullets are CSS, so copying the box gives the plain lines.
+// Each line of the box is its own block: its own leading spaces (real text, so
+// nesting shows and survives copying), a bullet, and the text; wrapped text is
+// indented under the first word. The bullet is left out of copied text.
+const BULLET = "• ";
 function addLines(text: string) {
     for (const raw of text.split("\n")) {
         const div = document.createElement("div");
-        const body = raw.trim();
+        div.className = "ln";
+        const body = raw.replace(/^[ \t]+/, "").trimEnd();
         if (!body) {
-            div.className = "ln blank";
+            div.append(document.createElement("br")); // an empty line, also when copied
         } else {
-            div.className = /^\s/.test(raw) ? "ln sub" : "ln";
-            div.textContent = body;
+            const indent = raw.slice(0, raw.length - raw.replace(/^[ \t]+/, "").length).replace(/\t/g, "    ");
+            const hang = indent.length + BULLET.length;
+            div.style.paddingLeft = `${hang}ch`;
+            div.style.textIndent = `-${hang}ch`;
+            const bullet = document.createElement("span");
+            bullet.className = "bullet";
+            bullet.setAttribute("aria-hidden", "true");
+            bullet.textContent = BULLET;
+            if (indent) div.append(indent);
+            div.append(bullet, body);
         }
         box.append(div);
     }
 }
+
+// Copying from the box gives the lines with their indentation, without bullets.
+box.addEventListener("copy", e => {
+    const text = document.getSelection()?.toString() ?? "";
+    e.clipboardData?.setData("text/plain", text.replace(/^([ \t]*)• /gm, "$1"));
+    e.preventDefault();
+});
 
 function setBox(text: string) {
     box.replaceChildren();
@@ -58,6 +75,10 @@ function appendBox(line: string) {
     box.scrollTop = box.scrollHeight;
 }
 
+// A one-time settings notice (e.g. a damaged settings file) stays part of the
+// welcome text, so Clear doesn't make it disappear (page does the same).
+let settingsNotice = "";
+
 function showWelcome() {
     setBox([
         "Drop files or folders here.",
@@ -65,6 +86,7 @@ function showWelcome() {
         "  .age files are decrypted, everything else is encrypted.",
         "  Output goes next to each file; existing files are never overwritten.",
         "  Encryption by the official age library, built in.",
+        ...(settingsNotice ? ["", settingsNotice] : []),
     ].join("\n"));
     box.scrollTop = 0; // the welcome text starts at the top
 }
@@ -346,11 +368,15 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     armor.checked = st.armor;
     writeLog.checked = st.writeLog;
     pq.checked = st.postQuantum;
+    settingsNotice = st.notice ?? "";
     showWelcome();
     setProgress(0, false);
     setTab(st.activeTab === "recipient" ? "recipient" : "passphrase", false);
-    if (st.notice) appendBox("\n" + st.notice);
+    // Running as administrator: a permanent line above the box, so file lists and
+    // job logs can't push it out of view.
     const adminWarning = await SageService.AdminWarning();
-    if (adminWarning) appendBox("\n" + adminWarning);
+    const banner = $("adminBanner");
+    banner.textContent = adminWarning;
+    banner.hidden = !adminWarning;
     addPaths(await SageService.LaunchPaths());
 })();

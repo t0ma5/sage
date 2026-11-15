@@ -316,13 +316,11 @@ func (s *SageService) AddPaths(existing, added []string) AddResult {
 	return AddResult{Files: files, Mode: mode, Note: note}
 }
 
-// problemLines lists unreadable paths (at most 5) and, when a drive is missing
-// because sage runs as administrator, says so once.
+// problemLines lists unreadable paths, at most 5. (When sage runs as administrator
+// the window shows a permanent warning line, so it isn't repeated here.)
 func problemLines(problems []addProblem) string {
 	var b strings.Builder
-	driveMissing := false
 	for i, p := range problems {
-		driveMissing = driveMissing || p.driveMissing
 		if i < 5 {
 			b.WriteString("  " + p.text + "\n")
 		}
@@ -330,16 +328,13 @@ func problemLines(problems []addProblem) string {
 	if len(problems) > 5 {
 		fmt.Fprintf(&b, "  ...and %d more.\n", len(problems)-5)
 	}
-	if driveMissing && runningElevated() {
-		b.WriteString(adminWarning + "\n")
-	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 const adminWarning = "Warning: sage is running as administrator. Windows hides drives mapped by your normal account from it, " +
 	"also blocks drag & drop from Explorer. Close sage and start it normally."
 
-// AdminWarning returns a warning when sage runs as administrator, for the window to show at start.
+// AdminWarning returns a warning when sage runs as administrator, for the window's permanent warning line.
 func (s *SageService) AdminWarning() string {
 	if runningElevated() {
 		return adminWarning
