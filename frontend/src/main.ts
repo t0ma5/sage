@@ -359,6 +359,8 @@ $("about").onclick = async () => {
     $("aboutDialog").hidden = false;
 };
 $("aboutClose").onclick = () => { $("aboutDialog").hidden = true; };
+$("adminChip").onclick = () => { $("adminDialog").hidden = false; $("adminClose").focus(); };
+$("adminClose").onclick = () => { $("adminDialog").hidden = true; };
 // Links open in the default browser, not inside the app window.
 document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     a.onclick = e => { e.preventDefault(); Browser.OpenURL(a.dataset.url!); };
@@ -378,11 +380,14 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     showWelcome();
     setProgress(0, false);
     setTab(st.activeTab === "recipient" ? "recipient" : "passphrase", false);
-    // Running as administrator: a permanent line above the box, so file lists and
-    // job logs can't push it out of view.
+    // Running as administrator: a warning dialog at start (like About), and an "Admin"
+    // pill in the header that reopens it, so a later blocked drag still has an explanation.
     const adminWarning = await SageService.AdminWarning();
-    const banner = $("adminBanner");
-    banner.textContent = adminWarning;
-    banner.hidden = !adminWarning;
+    if (adminWarning) {
+        $("adminText").textContent = adminWarning.replace(/^Warning:\s*/, "");
+        $("adminChip").hidden = false;
+        $("adminDialog").hidden = false;
+        $("adminClose").focus();
+    }
     addPaths(await SageService.LaunchPaths());
 })();

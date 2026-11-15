@@ -159,13 +159,16 @@ input.mono { font-family: var(--mono); font-size: 13px; }
 /* One block per line; main.ts sets the hanging indent (padding-left / text-indent)
    from the line's own indentation plus the bullet. */
 .box .bullet { user-select: none; }
-/* Permanent line shown only when sage runs as administrator. */
-.admin-banner {
-    margin: 6px 0 0;
-    color: var(--warn);
-    font-size: 12.5px;
-    line-height: 1.35;
+/* Shown only when sage runs as administrator: an amber outline pill like the mode
+   badge, which reopens the warning dialog. */
+.badge.admin { color: var(--warn); font-family: inherit; cursor: pointer; }
+.badge.admin:hover { background: rgba(240, 160, 64, .12); }
+.admin-icon {
+    width: 56px; height: 56px; margin: 4px auto 8px;
+    border: 3px solid var(--warn); border-radius: 50%;
+    color: var(--warn); font: 700 32px/50px sans-serif; text-align: center;
 }
+.admin-text { max-width: 380px; margin: 6px auto 14px !important; line-height: 1.45; }
 /* Wails adds this class while files are dragged over a drop target. */
 .files.file-drop-target-active .box { border-color: var(--focus); }
 

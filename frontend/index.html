@@ -11,6 +11,7 @@
         <header class="files-header">
             <h1>Files</h1>
             <span id="badge" class="badge" hidden></span>
+            <button id="adminChip" class="badge admin" title="sage is running as administrator: click for details" hidden>Admin</button>
             <div class="spacer"></div>
             <button id="addFiles" class="btn">Add files</button>
             <button id="addFolder" class="btn secondary">Add folder</button>
@@ -18,7 +19,6 @@
             <button id="inspect" class="btn secondary">Inspect</button>
             <button id="about" class="btn secondary small" title="About sage">i</button>
         </header>
-        <p id="adminBanner" class="admin-banner" role="alert" hidden></p>
         <div id="box" class="box" role="log" aria-label="Files and messages" tabindex="0"></div>
     </section>
 
@@ -96,6 +96,15 @@
         <p class="muted about-small">Encryption by the official age library:<br/>
             <a href="#" data-url="https://github.com/FiloSottile/age">github.com/FiloSottile/age</a></p>
         <div class="modal-actions"><button id="aboutClose" class="btn primary">Close</button></div>
+    </div>
+</div>
+
+<div id="adminDialog" class="modal" role="alertdialog" aria-labelledby="adminTitle" aria-describedby="adminText" hidden>
+    <div class="modal-body about">
+        <div class="admin-icon" aria-hidden="true">!</div>
+        <h2 id="adminTitle" class="about-title">Warning</h2>
+        <p id="adminText" class="admin-text"></p>
+        <div class="modal-actions"><button id="adminClose" class="btn primary">Close</button></div>
     </div>
 </div>
 
