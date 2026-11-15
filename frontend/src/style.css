@@ -156,6 +156,16 @@ input.mono { font-family: var(--mono); font-size: 13px; }
     word-break: break-word;
     user-select: text;
 }
+/* One block per line: a bullet, and wrapped text indented under the first word. */
+.box .ln {
+    padding-left: 2ch;
+    text-indent: -2ch;
+}
+/* "\2022 " is the bullet escape (its trailing space ends the escape); the second space follows it. */
+.box .ln::before { content: "\2022  "; white-space: pre; }
+.box .ln.sub { margin-left: 2ch; }
+.box .ln.blank { height: 1.45em; }
+.box .ln.blank::before { content: none; }
 /* Wails adds this class while files are dragged over a drop target. */
 .files.file-drop-target-active .box { border-color: var(--focus); }
 

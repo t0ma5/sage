@@ -30,13 +30,31 @@ let lastSummary = "";
 
 // ---------------------------------------------------------------- the box
 
+// Each line of the box is its own block: a bullet, and wrapped text indented under
+// it (CSS .ln), so it's clear where a line ends. A line starting with spaces is a
+// sub-item. The bullets are CSS, so copying the box gives the plain lines.
+function addLines(text: string) {
+    for (const raw of text.split("\n")) {
+        const div = document.createElement("div");
+        const body = raw.trim();
+        if (!body) {
+            div.className = "ln blank";
+        } else {
+            div.className = /^\s/.test(raw) ? "ln sub" : "ln";
+            div.textContent = body;
+        }
+        box.append(div);
+    }
+}
+
 function setBox(text: string) {
-    box.textContent = text;
+    box.replaceChildren();
+    if (text) addLines(text);
     box.scrollTop = box.scrollHeight;
 }
 
 function appendBox(line: string) {
-    box.textContent += (box.textContent ? "\n" : "") + line;
+    addLines(line);
     box.scrollTop = box.scrollHeight;
 }
 
