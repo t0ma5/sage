@@ -79,12 +79,25 @@ jobs:
         run: |
           $version = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "dev" }
           New-Item -ItemType Directory -Force dist | Out-Null
+          # The Go standard library and modules compiled into sage.exe (age is BSD-3-Clause,
+          # Wails MIT, ...) need their licence notices shipped with the binary.
+          $env:GOOS = "windows"
+          $mods = go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}} {{.Version}} {{.Dir}}{{end}}{{end}}' . | Sort-Object -Unique
+          $text = "Licences of the code built into sage.exe.`r`n`r`n==== Go standard library $(go env GOVERSION) ====`r`n`r`n" + (Get-Content -LiteralPath (Join-Path (go env GOROOT) LICENSE) -Raw)
+          foreach ($m in $mods) {
+            $path, $ver, $mdir = $m -split " ", 3
+            $lic = Get-ChildItem -LiteralPath $mdir -File | Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING)' } | Select-Object -First 1
+            if (-not $lic) { throw "no licence file for $path" }
+            $text += "`r`n==== $path $ver ====`r`n`r`n" + (Get-Content -LiteralPath $lic.FullName -Raw)
+          }
+          Set-Content -Path THIRD_PARTY_LICENSES.txt -Value $text -Encoding utf8
           foreach ($arch in "amd64", "arm64") {
             $dir = "pkg\sage-$version-windows-$arch"
             New-Item -ItemType Directory -Force $dir | Out-Null
             Copy-Item "out\$arch\sage.exe" $dir
             Copy-Item README.md $dir
             if (Test-Path LICENSE) { Copy-Item LICENSE $dir }
+            Copy-Item THIRD_PARTY_LICENSES.txt $dir
             Compress-Archive -Path "$dir\*" -DestinationPath "dist\sage-$version-windows-$arch.zip"
           }
           Get-ChildItem dist\*.zip | ForEach-Object {

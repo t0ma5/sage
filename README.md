@@ -106,3 +106,7 @@ The tests cover passphrase and key round trips, armor, SSH keys, output naming a
 - [age](https://age-encryption.org) by Filippo Valsorda and Ben Cartwright-Cox; sage uses its Go library, [filippo.io/age](https://github.com/FiloSottile/age) (BSD-3-Clause).
 - [Wails](https://wails.io) for the window.
 - Cover photo by Paulina S. on [Unsplash](https://unsplash.com/photos/green-leaves-on-white-surface-fPyE0Xl-C2g).
+
+## License
+
+BSD-3-Clause, see [LICENSE](LICENSE). The release zips also contain `THIRD_PARTY_LICENSES.txt` with the licences of the Go standard library and the modules built into `sage.exe` (age, Wails, ...).
