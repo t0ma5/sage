@@ -43,10 +43,10 @@ func main() {
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            appTitle,
 		Width:            590,
-		Height:           660,
+		Height:           720,
 		MinWidth:         520,
 		MinHeight:        540,
-		BackgroundColour: application.NewRGB(36, 36, 36),
+		BackgroundColour: application.NewRGB(32, 32, 32), // --bg in style.css, so there's no flash at start
 		URL:              "/",
 		// Files dropped on elements marked data-file-drop-target arrive here.
 		EnableFileDrop: true,

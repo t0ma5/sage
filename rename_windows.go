@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -77,9 +78,22 @@ func isElevated() bool {
 
 // showInExplorer opens the file's folder in Explorer with the file selected.
 func showInExplorer(path string) error {
-	// Explorer accepts "/select," followed by the path as the next argument; Go quotes a
-	// path with spaces. Explorer's exit code is meaningless, so Start, not Run.
-	return exec.Command("explorer.exe", "/select,", path).Start()
+	path = withoutLongPrefix(path) // Explorer doesn't understand \\?\ paths
+	exe := "explorer.exe"
+	if root := os.Getenv("SystemRoot"); root != "" {
+		exe = filepath.Join(root, "explorer.exe") // the real one, not whatever PATH finds first
+	}
+	cmd := exec.Command(exe)
+	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + exe + `" ` + explorerSelectArg(path)}
+	return cmd.Start() // Explorer's exit code is meaningless, so Start, not Run
+}
+
+// explorerSelectArg is Explorer's "select this file" argument. Explorer parses its own
+// command line: "/select," and the path are one argument, and the path must be quoted
+// even without spaces, or a comma in it splits it (Go's own quoting only quotes paths
+// with spaces, which is why the command line is built by hand).
+func explorerSelectArg(path string) string {
+	return `/select,"` + withoutLongPrefix(path) + `"`
 }
 
 // isNetUnreachable reports whether err means a network share can't be reached:

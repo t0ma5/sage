@@ -69,7 +69,35 @@ func TestCancelMidFile(t *testing.T) {
 	if _, err := os.Stat(src + ".age"); err == nil {
 		t.Fatal("cancelled file left an output")
 	}
+	// The row is told it was cancelled (the window puts it back to "ready"), not that it failed.
+	if len(done.Results) != 1 || !done.Results[0].Cancelled || done.Results[0].OK || done.Results[0].Path != src {
+		t.Fatalf("results: %+v", done.Results)
+	}
 	noPartFiles(t, dir)
+}
+
+func TestOpenFolderMissingFile(t *testing.T) {
+	err := (&SageService{}).OpenFolder(filepath.Join(t.TempDir(), "gone.age"))
+	if err == nil || !strings.Contains(err.Error(), "gone.age isn't there any more") {
+		t.Fatalf("err: %v", err)
+	}
+}
+
+func TestOldSettingsWithWriteLog(t *testing.T) {
+	// Settings saved by v0.1.0 still have "writeLog"; it is ignored, and dropped on the next save.
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, settingsFile), `{"activeTab":"recipient","recipients":"age1abc","writeLog":true}`)
+	s := &SageService{baseDir: dir}
+	st := s.LoadSettings()
+	if st.Notice != "" || st.ActiveTab != "recipient" || st.Recipients != "age1abc" {
+		t.Fatalf("%+v", st)
+	}
+	if err := s.SaveSettings(st); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(read(t, filepath.Join(dir, settingsFile)), "writeLog") {
+		t.Fatal("writeLog was saved again")
+	}
 }
 
 func TestDamagedSettingsWhenBadAlreadyExists(t *testing.T) {
@@ -119,11 +147,11 @@ func TestLongPathPrefix(t *testing.T) {
 		t.Skip("Windows only")
 	}
 	cases := map[string]string{
-		`C:\a\b`:          `\\?\C:\a\b`,
-		`C:\a\.\b\..\c`:   `\\?\C:\a\c`,
-		`\\srv\share\f`:   `\\?\UNC\srv\share\f`,
-		`\\?\C:\already`:  `\\?\C:\already`,
-		`relative\path`:   `relative\path`,
+		`C:\a\b`:         `\\?\C:\a\b`,
+		`C:\a\.\b\..\c`:  `\\?\C:\a\c`,
+		`\\srv\share\f`:  `\\?\UNC\srv\share\f`,
+		`\\?\C:\already`: `\\?\C:\already`,
+		`relative\path`:  `relative\path`,
 	}
 	for in, want := range cases {
 		if got := longPath(in); got != want {

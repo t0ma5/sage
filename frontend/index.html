@@ -46,11 +46,11 @@
 
     <section class="card">
         <div class="tabs" role="tablist">
-            <button id="tabPassphrase" role="tab" class="tab">Passphrase</button>
-            <button id="tabRecipient" role="tab" class="tab">Keys</button>
+            <button id="tabPassphrase" role="tab" class="tab" aria-controls="panelPassphrase">Passphrase</button>
+            <button id="tabRecipient" role="tab" class="tab" aria-controls="panelRecipient">Keys</button>
         </div>
         <div class="panels">
-            <div id="panelPassphrase" class="panel passphrase">
+            <div id="panelPassphrase" class="panel passphrase" role="tabpanel" aria-labelledby="tabPassphrase">
                 <div class="field-wrap">
                     <input id="passphrase" type="password" placeholder="Passphrase" autocomplete="off" spellcheck="false"/>
                     <button id="showPass" class="eye" type="button" title="Show passphrase" aria-label="Show passphrase" aria-pressed="false"><svg class="ic"><use href="#i-eye"/></svg></button>
@@ -59,7 +59,7 @@
                 <button id="genPass" class="link" type="button"><svg class="ic sm"><use href="#i-wand"/></svg>Generate a strong passphrase</button>
             </div>
 
-            <div id="panelRecipient" class="panel recipient" hidden>
+            <div id="panelRecipient" class="panel recipient" role="tabpanel" aria-labelledby="tabRecipient" hidden>
                 <div class="row">
                     <strong>Encrypt to</strong>
                     <span class="muted">public keys, one per line &middot; # comment</span>
@@ -99,9 +99,9 @@
     </footer>
 </div>
 
-<div id="helpDialog" class="modal" hidden>
+<div id="helpDialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle" hidden>
     <div class="modal-body">
-        <h2>Keys</h2>
+        <h2 id="helpTitle">Keys</h2>
         <p><strong>Encrypt:</strong> needs at least one recipient or a recipients file. A recipient is an age public key (<code>age1...</code>, post-quantum <code>age1pq1...</code>) or an SSH public key (<code>ssh-ed25519 ...</code>, <code>ssh-rsa ...</code>). Everyone listed can decrypt the file. Post-quantum and classic keys can't be mixed in one file.</p>
         <p><strong>Decrypt:</strong> needs at least one identity file holding secret keys (<code>AGE-SECRET-KEY-1...</code>) or an SSH private key. Unused ones are ignored.</p>
         <p><strong>Generate new key pair</strong> creates an identity file and adds it here together with its public key. Keep that file secret and backed up: without it, files encrypted to its public key cannot be decrypted.</p>
@@ -110,10 +110,10 @@
     </div>
 </div>
 
-<div id="aboutDialog" class="modal" hidden>
+<div id="aboutDialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" hidden>
     <div class="modal-body about">
         <img src="/appicon.png" alt="" class="about-icon"/>
-        <h2 class="about-title">sage <span id="aboutVersion" class="muted"></span></h2>
+        <h2 id="aboutTitle" class="about-title">sage <span id="aboutVersion" class="muted"></span></h2>
         <p class="about-sub">Simple GUI for <strong>age</strong></p>
         <p><a href="#" data-url="https://github.com/t0ma5/sage">github.com/t0ma5/sage</a></p>
         <p class="muted about-small">Encryption by the official age library:<br/>
@@ -122,7 +122,7 @@
     </div>
 </div>
 
-<div id="adminDialog" class="modal" role="alertdialog" aria-labelledby="adminTitle" aria-describedby="adminText" hidden>
+<div id="adminDialog" class="modal" role="alertdialog" aria-modal="true" aria-labelledby="adminTitle" aria-describedby="adminText" hidden>
     <div class="modal-body about">
         <div class="admin-icon" aria-hidden="true">!</div>
         <h2 id="adminTitle" class="about-title">Warning</h2>
@@ -132,7 +132,7 @@
 </div>
 
 <!-- Inspect, key generation and other longer messages. -->
-<div id="infoDialog" class="modal" role="dialog" aria-labelledby="infoTitle" hidden>
+<div id="infoDialog" class="modal" role="dialog" aria-modal="true" aria-labelledby="infoTitle" hidden>
     <div class="modal-body info">
         <h2 id="infoTitle"></h2>
         <pre id="infoText" class="info-text"></pre>

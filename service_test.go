@@ -100,6 +100,11 @@ func TestAddPathsSizes(t *testing.T) {
 	if res.Sizes[p] != 5 {
 		t.Fatalf("sizes: %v", res.Sizes)
 	}
+	// Nothing new added: the existing list keeps its sizes.
+	res = (&SageService{}).AddPaths([]string{p}, []string{filepath.Join(dir, "missing.txt")})
+	if len(res.Files) != 1 || res.Sizes[p] != 5 || !strings.HasPrefix(res.Note, "No files could be added") {
+		t.Fatalf("no-files branch: %+v", res)
+	}
 }
 
 func TestRunStopsOnFirstWrongKeyAndOrdersRetry(t *testing.T) {
@@ -112,6 +117,10 @@ func TestRunStopsOnFirstWrongKeyAndOrdersRetry(t *testing.T) {
 
 	if !strings.Contains(done.Summary, "0 OK, 1 failed, 2 not processed") {
 		t.Fatalf("summary %q", done.Summary)
+	}
+	// Only the first file has a result (failed); the others were never tried.
+	if len(done.Results) != 1 || done.Results[0].Path != a || done.Results[0].OK || done.Results[0].Error == "" {
+		t.Fatalf("results: %+v", done.Results)
 	}
 	// Unprocessed first, the failed one last, so a retry handles the others first.
 	if strings.Join(done.Remaining, "|") != strings.Join([]string{b, c, a}, "|") {

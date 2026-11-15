@@ -36,11 +36,13 @@ interface Entry {
 }
 
 let entries: Entry[] = [];
+const rowEls = new Map<Entry, HTMLElement>();
 let tab: "passphrase" | "recipient" = "passphrase";
 let busy = false;
 let lastSummary = "";   // "Finished: 2 OK, 1 failed." after a run
 let notes = "";         // notes from adding files, settings, etc.
 let notesWarn = false;
+let notesSticky = false; // a reminder that a run doesn't clear (the generated passphrase)
 
 /** The files the next run will process. */
 function pending(): string[] {
@@ -83,13 +85,99 @@ function icon(name: string, cls = "ic"): SVGSVGElement {
 
 // ---------------------------------------------------------------- the list
 
-function renderList() {
-    list.replaceChildren();
+const STATUS_TEXT: Record<RowStatus, string> = {
+    ready: "ready", working: "working", done: "done", failed: "failed",
+};
+
+function rowButton(iconName: string, label: string, onclick: () => void, disabled = false): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.className = "row-btn";
+    btn.type = "button";
+    btn.append(icon(iconName));
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+    btn.dataset.action = iconName;
+    btn.disabled = disabled;
+    btn.onclick = onclick;
+    return btn;
+}
+
+function removeEntry(e: Entry) {
+    const index = entries.indexOf(e);
+    entries = entries.filter(x => x !== e);
+    if (!entries.some(x => x.status === "done" || x.status === "failed")) lastSummary = "";
+    renderList();
+    refresh();
+    // Keep keyboard focus nearby instead of losing it with the removed row.
+    const rows = list.querySelectorAll<HTMLElement>(".row-file");
+    const next = rows[Math.min(index, rows.length - 1)]?.querySelector<HTMLButtonElement>("button[data-action='x']");
+    (next ?? $("addFiles")).focus();
+}
+
+function buildRow(e: Entry): HTMLElement {
+    const row = document.createElement("div");
+    row.className = `row-file ${e.status}`;
+    row.setAttribute("role", "listitem");
+    row.title = e.path;
+
+    const name = document.createElement("span");
+    name.className = "cell-name";
+    const iconName = e.status === "done" ? "check" : e.status === "failed" ? "alert"
+        : e.status === "working" ? "loader" : e.path.toLowerCase().endsWith(".age") ? "lock" : "file";
+    const label = document.createElement("span");
+    label.className = "ellipsis";
+    label.textContent = baseName(e.path);
+    name.append(icon(iconName), label);
+
+    // Second column: the folder, or after a run the output name or what went wrong.
+    const sub = document.createElement("span");
+    sub.className = "cell-sub ellipsis";
+    const detail = e.status === "done" ? `\u2192 ${baseName(e.output ?? "")}`
+        : e.status === "failed" ? e.error ?? "Failed" : folderOf(e.path);
+    sub.textContent = detail;
+    if (e.status === "done") sub.title = e.output ?? "";
+    if (e.status === "failed") sub.title = e.error ?? "";
+
+    const size = document.createElement("span");
+    size.className = "num cell-sub";
+    size.textContent = formatSize(e.size);
+
+    const actions = document.createElement("span");
+    actions.className = "row-actions";
+    if (e.status === "done") {
+        actions.append(rowButton("folder-open", `Show ${baseName(e.output ?? "")} in its folder`,
+            () => SageService.OpenFolder(e.output ?? "").catch(err => setNotes(String(err?.message ?? err), true))));
+    }
+    actions.append(rowButton("x", `Remove ${baseName(e.path)} from the list`, () => removeEntry(e), busy));
+
+    // Screen readers: the row says what it is and how it went (the icon is decorative).
+    row.setAttribute("aria-label", `${baseName(e.path)}, ${STATUS_TEXT[e.status]}: ${detail}`);
+    row.append(name, sub, size, actions);
+    rowEls.set(e, row);
+    return row;
+}
+
+function updateHeader() {
     // After a run the second column shows each file's result instead of its folder.
-    $("colSecond").textContent = entries.some(e => e.status === "done" || e.status === "failed") ? "Result" : "Folder";
+    const ran = entries.filter(e => e.status === "done" || e.status === "failed").length;
+    $("colSecond").textContent = ran === 0 ? "Folder" : ran === entries.length ? "Result" : "Folder / result";
+}
+
+/** Rebuild every row, keeping the scroll position and keyboard focus. */
+function renderList() {
+    const scroll = list.scrollTop;
+    const focused = document.activeElement as HTMLElement | null;
+    const focusRow = focused && list.contains(focused)
+        ? Array.from(rowEls.entries()).find(([, el]) => el.contains(focused))?.[0] : undefined;
+    const focusAction = focused?.dataset?.action;
+
+    list.replaceChildren();
+    rowEls.clear();
+    updateHeader();
     if (entries.length === 0) {
         const empty = document.createElement("div");
         empty.className = "empty";
+        empty.setAttribute("role", "listitem");
         const title = document.createElement("strong");
         title.textContent = "Drop files or folders here";
         const l1 = document.createElement("span");
@@ -100,60 +188,29 @@ function renderList() {
         list.append(empty);
         return;
     }
-    for (const e of entries) {
-        const row = document.createElement("div");
-        row.className = `row-file ${e.status}`;
-        row.setAttribute("role", "listitem");
-        row.title = e.path;
-
-        const name = document.createElement("span");
-        name.className = "cell-name";
-        const iconName = e.status === "done" ? "check" : e.status === "failed" ? "alert"
-            : e.status === "working" ? "loader" : e.path.toLowerCase().endsWith(".age") ? "lock" : "file";
-        const label = document.createElement("span");
-        label.className = "ellipsis";
-        label.textContent = baseName(e.path);
-        name.append(icon(iconName), label);
-
-        // Second column: the folder, or after a run the output name or what went wrong.
-        const sub = document.createElement("span");
-        sub.className = "cell-sub ellipsis";
-        sub.textContent = e.status === "done" ? `\u2192 ${baseName(e.output ?? "")}`
-            : e.status === "failed" ? e.error ?? "Failed" : folderOf(e.path);
-        if (e.status === "done" || e.status === "failed") sub.title = e.status === "done" ? e.output ?? "" : e.error ?? "";
-
-        const size = document.createElement("span");
-        size.className = "num cell-sub";
-        size.textContent = formatSize(e.size);
-
-        const btn = document.createElement("button");
-        btn.className = "row-btn";
-        btn.type = "button";
-        if (e.status === "done") {
-            btn.append(icon("folder-open"));
-            btn.title = "Show in folder";
-            btn.setAttribute("aria-label", `Show ${baseName(e.output ?? "")} in its folder`);
-            btn.onclick = () => SageService.OpenFolder(e.output ?? "").catch(err => setNotes(String(err?.message ?? err), true));
-        } else {
-            btn.append(icon("x"));
-            btn.title = "Remove from the list";
-            btn.setAttribute("aria-label", `Remove ${baseName(e.path)}`);
-            btn.disabled = busy;
-            btn.onclick = () => {
-                entries = entries.filter(x => x !== e);
-                lastSummary = "";
-                renderList();
-                refresh();
-            };
-        }
-        row.append(name, sub, size, btn);
-        list.append(row);
+    for (const e of entries) list.append(buildRow(e));
+    list.scrollTop = scroll;
+    if (focusRow && rowEls.has(focusRow)) {
+        rowEls.get(focusRow)!.querySelector<HTMLButtonElement>(`button[data-action='${focusAction}']`)?.focus();
     }
 }
 
-function setNotes(text: string, warn = false) {
+/** Redraw one row in place (results and progress), keeping focus if it was in that row. */
+function updateRow(e: Entry) {
+    const old = rowEls.get(e);
+    if (!old) return renderList();
+    const focused = document.activeElement as HTMLElement | null;
+    const hadFocus = focused && old.contains(focused) ? focused.dataset.action : undefined;
+    const row = buildRow(e);
+    old.replaceWith(row);
+    if (hadFocus) row.querySelector<HTMLButtonElement>(`button[data-action='${hadFocus}']`)?.focus();
+    updateHeader();
+}
+
+function setNotes(text: string, warn = false, sticky = false) {
     notes = text;
     notesWarn = warn;
+    notesSticky = sticky;
     renderSummary();
 }
 
@@ -217,6 +274,7 @@ async function refresh() {
     for (const el of [passphrase, confirmPass, recipients, recipientsFile, identities, pq]) {
         el.disabled = busy;
     }
+    list.querySelectorAll<HTMLButtonElement>("button[data-action='x']").forEach(b => { b.disabled = busy; });
     renderSummary();
     cancelBtn.hidden = !busy;
     if (busy) {
@@ -230,8 +288,13 @@ async function refresh() {
     if (seq !== refreshSeq || busy) return; // a newer refresh, or a job started meanwhile
     actionBtn.disabled = !st.enabled;
     actionBtn.textContent = st.button;
-    hint.textContent = st.hint;
-    hint.classList.toggle("warn", st.warn);
+    if (entries.length && pending().length === 0) {
+        hint.textContent = "All done. Add more files, or Clear to start over.";
+        hint.classList.remove("warn");
+    } else {
+        hint.textContent = st.hint;
+        hint.classList.toggle("warn", st.warn);
+    }
 }
 
 function setTab(t: "passphrase" | "recipient", save = true) {
@@ -239,6 +302,7 @@ function setTab(t: "passphrase" | "recipient", save = true) {
     for (const [id, on] of [["tabPassphrase", t === "passphrase"], ["tabRecipient", t === "recipient"]] as const) {
         $(id).classList.toggle("active", on);
         $(id).setAttribute("aria-selected", String(on));
+        $(id).tabIndex = on ? 0 : -1;
     }
     $("panelPassphrase").hidden = t !== "passphrase";
     $("panelRecipient").hidden = t !== "recipient";
@@ -272,28 +336,39 @@ function saveSettingsSoon() {
 
 // ---------------------------------------------------------------- files
 
-async function addPaths(paths: string[] | null) {
+// Adds run one after another, so two quick drops can't overwrite each other's files.
+let addQueue: Promise<void> = Promise.resolve();
+function addPaths(paths: string[] | null): Promise<void> {
+    addQueue = addQueue.then(() => addPathsNow(paths)).catch(() => {});
+    return addQueue;
+}
+
+async function addPathsNow(paths: string[] | null) {
     if (!paths || paths.length === 0) return;
     if (busy) {
         hint.textContent = "Busy: wait for the current job to finish, or press Cancel.";
         hint.classList.add("warn");
         return;
     }
-    const res = await SageService.AddPaths(pending(), paths);
+    const before = pending();
+    const res = await SageService.AddPaths(before, paths);
     if (busy) return; // a job started while this was in flight
     const resFiles = res.files ?? []; // Go sends an empty list as null
+    const warn = res.note.startsWith("No files") || res.note.includes("Not added");
+    // Nothing new: keep the list (and the last run's results); just show the note.
+    if (resFiles.length === before.length && resFiles.every((p, i) => p === before[i])) {
+        setNotes(res.note, warn);
+        return;
+    }
     const sizes = res.sizes ?? {};
     // New files start a new batch: finished rows from the last run go away.
     const old = new Map(entries.filter(e => e.status !== "done").map(e => [e.path, e]));
-    entries = resFiles.map(p => {
-        const prev = old.get(p);
-        return prev ?? {path: p, size: sizes[p], status: "ready" as RowStatus};
-    });
+    entries = resFiles.map(p => old.get(p) ?? {path: p, size: sizes[p], status: "ready" as RowStatus});
     for (const e of entries) if (e.size === undefined) e.size = sizes[e.path];
     lastSummary = "";
     setProgress(0, false);
     renderList();
-    setNotes(res.note, res.note.startsWith("No files") || res.note.includes("Not added"));
+    setNotes(res.note, warn);
     refresh();
     if (tab === "passphrase" && entries.length) passphrase.focus();
 }
@@ -305,66 +380,110 @@ function appendLine(area: HTMLTextAreaElement, line: string) {
 
 // ---------------------------------------------------------------- dialogs
 
+// Dialogs are modal: focus moves to their Close button, Tab stays inside, Esc closes,
+// and focus returns to whatever opened them.
+let dialogOpener: HTMLElement | null = null;
+
+function openDialog(id: string) {
+    dialogOpener = document.activeElement as HTMLElement | null;
+    $(id).hidden = false;
+    $(id).querySelector<HTMLButtonElement>(".modal-actions .btn")?.focus();
+}
+
+function closeDialog(id: string) {
+    if ($(id).hidden) return;
+    $(id).hidden = true;
+    if (dialogOpener && document.contains(dialogOpener)) dialogOpener.focus();
+    dialogOpener = null;
+}
+
+function openModal(): HTMLElement | null {
+    return document.querySelector<HTMLElement>(".modal:not([hidden])");
+}
+
+document.addEventListener("keydown", e => {
+    const modal = openModal();
+    if (!modal) return;
+    if (e.key === "Escape") {
+        e.preventDefault();
+        closeDialog(modal.id);
+    } else if (e.key === "Tab") {
+        const items = Array.from(modal.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"));
+        if (items.length === 0) return;
+        const i = items.indexOf(document.activeElement as HTMLElement);
+        const next = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i === items.length - 1 ? 0 : i + 1);
+        e.preventDefault();
+        items[next].focus();
+    }
+});
+
 function showInfo(title: string, text: string) {
     $("infoTitle").textContent = title;
     $("infoText").textContent = text;
-    $("infoDialog").hidden = false;
-    $("infoClose").focus();
+    openDialog("infoDialog");
 }
 
 // ---------------------------------------------------------------- the job
 
 async function run() {
     if (busy || actionBtn.disabled) return;
+    // Failed rows are retried; remember their messages in case Start is refused.
+    const previous = entries.filter(e => e.status === "failed").map(e => [e, e.error] as const);
     try {
         busy = true;
         lastSummary = "";
-        setNotes("");
+        if (!notesSticky) setNotes("");
         setProgress(0);
-        for (const e of entries) if (e.status === "failed") { e.status = "ready"; e.error = undefined; }
+        for (const [e] of previous) { e.status = "ready"; e.error = undefined; }
         renderList();
         refresh();
         await SageService.Start(request(true) as any);
     } catch (err: any) {
         busy = false;
+        for (const [e, error] of previous) { e.status = "failed"; e.error = error; }
         setNotes("Could not start: " + (err?.message ?? err), true);
         renderList();
         refresh();
     }
 }
 
-function applyResult(r: any) {
+function applyResult(r: any): Entry | undefined {
     const e = entries.find(x => x.path === r.path);
-    if (!e) return;
+    if (!e) return undefined;
     if (r.ok) {
         e.status = "done";
         e.output = r.output;
+        e.error = undefined;
+    } else if (r.cancelled) {
+        e.status = "ready"; // nothing happened to it; the next run does it
         e.error = undefined;
     } else {
         e.status = "failed";
         e.error = r.error;
     }
+    return e;
 }
 
 Events.On("job:file", ev => {
-    applyResult(ev.data);
-    renderList();
+    const e = applyResult(ev.data);
+    if (e) updateRow(e);
 });
 
 Events.On("job:progress", ev => {
     const p = ev.data as any;
     const fraction = p.bytesTotal > 0 ? p.bytes / p.bytesTotal : (p.total ? p.done / p.total : 0);
     setProgress(Math.min(1, fraction));
-    if (busy && p.current) {
-        const e = entries.find(x => x.path === p.current);
-        if (e && e.status !== "working") {
-            for (const x of entries) if (x.status === "working") x.status = "ready";
-            e.status = "working";
-            renderList();
-        }
-        hint.textContent = `Working on file ${Math.min(p.done + 1, p.total)} of ${p.total}: ${baseName(p.current)}`;
-        hint.classList.remove("warn");
+    if (!busy || !p.current) return;
+    const e = entries.find(x => x.path === p.current);
+    // Only a waiting row becomes "working": a late tick must not undo a finished one.
+    if (e && e.status === "ready") {
+        for (const x of entries) if (x.status === "working") { x.status = "ready"; updateRow(x); }
+        e.status = "working";
+        updateRow(e);
+        rowEls.get(e)?.scrollIntoView({block: "nearest"});
     }
+    hint.textContent = `Working on file ${Math.min(p.done + 1, p.total)} of ${p.total}: ${baseName(p.current)}`;
+    hint.classList.remove("warn");
 });
 
 Events.On("job:done", ev => {
@@ -384,7 +503,7 @@ Events.On("files:dropped", ev => addPaths(ev.data as string[]));
 actionBtn.onclick = run;
 cancelBtn.onclick = () => SageService.Cancel();
 for (const el of [passphrase, confirmPass]) {
-    el.addEventListener("input", refresh);
+    el.addEventListener("input", () => { genArmed = false; refresh(); });
     el.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
 }
 // These fields make Go read the recipients file and identity files, so their check
@@ -408,12 +527,21 @@ function setPassVisible(show: boolean) {
     showPass.setAttribute("aria-label", showPass.title);
 }
 showPass.onclick = () => setPassVisible(passphrase.type === "password");
+
+// Generate: a typed passphrase is only replaced on a second click.
+let genArmed = false;
 $("genPass").onclick = async () => {
+    if (passphrase.value && !genArmed) {
+        genArmed = true;
+        setNotes("Click again to replace the passphrase you typed with a generated one.", true);
+        return;
+    }
+    genArmed = false;
     try {
         const p = await SageService.GeneratePassphrase();
         passphrase.value = confirmPass.value = p;
         setPassVisible(true);
-        setNotes("Generated a passphrase. Copy it and keep it somewhere safe: without it the files can't be decrypted.", true);
+        setNotes("Generated a passphrase. Copy it and keep it somewhere safe: without it the files can't be decrypted.", true, true);
         refresh();
     } catch (err: any) {
         setNotes("Could not generate a passphrase: " + (err?.message ?? err), true);
@@ -421,6 +549,14 @@ $("genPass").onclick = async () => {
 };
 $("tabPassphrase").onclick = () => setTab("passphrase");
 $("tabRecipient").onclick = () => setTab("recipient");
+for (const id of ["tabPassphrase", "tabRecipient"]) {
+    $(id).addEventListener("keydown", e => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            setTab(tab === "passphrase" ? "recipient" : "passphrase");
+            $(tab === "passphrase" ? "tabPassphrase" : "tabRecipient").focus();
+        }
+    });
+}
 
 $("addFiles").onclick = async () => addPaths(await SageService.ChooseFiles());
 $("addFolder").onclick = async () => {
@@ -431,6 +567,7 @@ $("clear").onclick = () => {
     entries = [];
     lastSummary = "";
     passphrase.value = confirmPass.value = "";
+    genArmed = false;
     setPassVisible(false);
     setNotes("");
     setProgress(0, false);
@@ -476,21 +613,16 @@ $("keygen").onclick = async () => {
         if (!msg.includes("cancelled")) showInfo("Key generation failed", msg);
     }
 };
-$("help").onclick = () => { $("helpDialog").hidden = false; };
-$("helpClose").onclick = () => { $("helpDialog").hidden = true; };
+$("help").onclick = () => openDialog("helpDialog");
+$("helpClose").onclick = () => closeDialog("helpDialog");
 $("about").onclick = async () => {
     $("aboutVersion").textContent = (await SageService.Title()).replace(/^sage\s*/, "");
-    $("aboutDialog").hidden = false;
+    openDialog("aboutDialog");
 };
-$("aboutClose").onclick = () => { $("aboutDialog").hidden = true; };
-$("adminChip").onclick = () => { $("adminDialog").hidden = false; $("adminClose").focus(); };
-$("adminClose").onclick = () => { $("adminDialog").hidden = true; };
-$("infoClose").onclick = () => { $("infoDialog").hidden = true; };
-// Esc closes whichever dialog is open.
-document.addEventListener("keydown", e => {
-    if (e.key !== "Escape") return;
-    for (const id of ["infoDialog", "helpDialog", "aboutDialog", "adminDialog"]) $(id).hidden = true;
-});
+$("aboutClose").onclick = () => closeDialog("aboutDialog");
+$("adminChip").onclick = () => openDialog("adminDialog");
+$("adminClose").onclick = () => closeDialog("adminDialog");
+$("infoClose").onclick = () => closeDialog("infoDialog");
 // Links open in the default browser, not inside the app window.
 document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     a.onclick = e => { e.preventDefault(); Browser.OpenURL(a.dataset.url!); };
@@ -506,7 +638,7 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     identities.value = st.identities ? st.identities + "\n" : "";
     armor.checked = st.armor;
     pq.checked = st.postQuantum;
-    if (st.notice) setNotes(st.notice, true);
+    if (st.notice) setNotes(st.notice, true, true);
     setProgress(0, false);
     setTab(st.activeTab === "recipient" ? "recipient" : "passphrase", false);
     // Running as administrator: a warning dialog at start (like About), and an "Admin"
@@ -526,8 +658,7 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
             }
         }
         $("adminChip").hidden = false;
-        $("adminDialog").hidden = false;
-        $("adminClose").focus();
+        openDialog("adminDialog");
     }
-    addPaths(await SageService.LaunchPaths());
+    await addPaths(await SageService.LaunchPaths());
 })();

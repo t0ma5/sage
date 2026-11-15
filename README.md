@@ -21,7 +21,7 @@ sage is unofficial and not affiliated with age's authors.
 ## Use it
 
 1. Start `sage.exe`.
-2. Add files: drop files or folders on the file list, or use the green **Files** / **Folder** buttons. Each addition joins the list (name, folder, size); duplicates are skipped, and **×** removes a file. A folder adds the files directly inside it (the list says how many subfolders were left out, and which paths couldn't be read and why).
+2. Add files: drop files or folders on the file list, or use the green **Files** / **Folder** buttons. Each addition joins the list (name, folder, size); duplicates are skipped, and **×** removes a file. A folder adds the files directly inside it; the line under the list says how many subfolders were left out, and which paths couldn't be read and why.
 3. Choose a tab, **Passphrase** or **Keys**, and fill it in.
 4. Click the button at the bottom right (**Encrypt 3 files**, **Decrypt 1 file**, ...) or press Enter in a passphrase field.
 
@@ -55,7 +55,6 @@ Not supported yet: age plugins (e.g. YubiKey), and passphrase-protected identity
 ### Options and settings
 
 - **ASCII armor:** text output instead of binary, for e-mail or chat.
-- sage writes no log file: results are shown in the window only.
 - Settings are saved in `sageSettings.json` next to `sage.exe`. Only recipients, comments and paths are stored; secret keys, pasted private keys and other stray text never are. A damaged settings file is kept as `sageSettings.json.bad` and reported.
 
 ### Send to

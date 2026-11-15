@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	appTitle     = "sage v0.1.0"
+	appTitle     = "sage v0.1.1"
 	settingsFile = "sageSettings.json"
 )
 
@@ -137,9 +137,9 @@ type SageService struct {
 	baseDir     string
 	launchPaths []string
 
-	mu       sync.Mutex
-	running  bool
-	cancel   context.CancelFunc
+	mu             sync.Mutex
+	running        bool
+	cancel         context.CancelFunc
 	inflight       sync.WaitGroup
 	settingsBroken atomic.Bool
 

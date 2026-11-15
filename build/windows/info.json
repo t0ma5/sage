@@ -1,12 +1,12 @@
 {
 	"fixed": {
-		"file_version": "0.1.0",
-		"product_version": "0.1.0"
+		"file_version": "0.1.1",
+		"product_version": "0.1.1"
 	},
 	"info": {
 		"0409": {
-			"FileVersion": "0.1.0",
-			"ProductVersion": "0.1.0",
+			"FileVersion": "0.1.1",
+			"ProductVersion": "0.1.1",
 			"CompanyName": "t0ma5",
 			"FileDescription": "Simple GUI for age file encryption",
 			"LegalCopyright": "BSD-3-Clause",

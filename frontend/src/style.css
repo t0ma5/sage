@@ -99,14 +99,15 @@ html, body {
 .files { flex: 1; min-height: 120px; display: flex; flex-direction: column; padding: 4px 12px 0; }
 .list-head, .row-file {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 150px) 70px 30px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 150px) 64px 60px;
     gap: 10px;
     align-items: center;
     padding: 0 8px;
 }
 .list-head { height: 28px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .num { text-align: right; }
-.list { flex: 1; min-height: 0; overflow-y: auto; border-bottom: 1px solid var(--line); }
+.list { flex: 1; min-height: 72px; overflow-y: auto; border-bottom: 1px solid var(--line); }
+.row-actions { display: flex; justify-content: flex-end; gap: 2px; }
 .row-file { min-height: 34px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .row-file:last-child { border-bottom: 0; }
 .row-file:hover { background: var(--row-hover); }
@@ -127,7 +128,8 @@ html, body {
 
 /* Empty list: an invitation to drop files. */
 .empty {
-    height: 100%;
+    min-height: 100%;
+    padding: 8px 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -142,7 +144,8 @@ html, body {
 /* Wails adds this class while files are dragged over a drop target. */
 .files.file-drop-target-active .list { outline: 2px dashed var(--focus); outline-offset: -2px; border-radius: 6px; }
 
-.summary { font-size: 12px; color: var(--muted); padding: 7px 8px 16px; white-space: pre-wrap; flex-shrink: 0; }
+/* At most about 4 lines; a long "Not added" list scrolls instead of squeezing the file list. */
+.summary { font-size: 12px; line-height: 1.4; color: var(--muted); margin: 7px 0 16px; padding: 0 8px; white-space: pre-wrap; flex-shrink: 0; max-height: calc(4 * 1.4em); overflow-y: auto; }
 .summary .warn { color: var(--warn); }
 
 /* ---------------- buttons and fields ---------------- */
