@@ -97,9 +97,14 @@ func keepLines(text string, keep func(string) bool) string {
 
 func isRecipientLine(line string) bool { return recipientKind(line) != "" }
 
-// looksLikePath: a Windows or relative path has a separator or a drive colon.
+// looksLikePath: a full Windows path ("C:\..." or "\\server\share\..."), what Browse
+// and key generation put in the fields. Other text, say "correct:horse/battery"
+// pasted into the wrong field, is not written to the settings file.
 func looksLikePath(line string) bool {
-	return strings.ContainsAny(line, `\/:`) && !looksLikeBase64Blob(line)
+	p := strings.Trim(strings.TrimSpace(line), `"`)
+	letter := len(p) >= 3 && ((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z'))
+	drive := letter && p[1] == ':' && (p[2] == '\\' || p[2] == '/')
+	return (drive || strings.HasPrefix(p, `\\`)) && !looksLikeBase64Blob(p)
 }
 
 // meaningfulLines returns the lines that are neither blank nor # comments.
@@ -489,10 +494,21 @@ func isWrongKey(err error) bool {
 	return errors.As(err, &noMatch)
 }
 
+// partLeftError is a failure (or cancel) whose partial output file could not be
+// deleted, typically because antivirus still holds it; Part names it so the user
+// can delete it. errors.Is/As still see the original error.
+type partLeftError struct {
+	err  error
+	Part string
+}
+
+func (e *partLeftError) Error() string { return e.err.Error() }
+func (e *partLeftError) Unwrap() error { return e.err }
+
 // processFile encrypts or decrypts one file next to itself and returns the output
 // path. The output never replaces an existing file.
 func processFile(ctx context.Context, path string, encrypt bool, recipients []age.Recipient,
-	identities []age.Identity, useArmor bool, progress func(int)) (string, error) {
+	identities []age.Identity, useArmor bool, progress func(int)) (_ string, err error) {
 
 	src, err := os.Open(path)
 	if err != nil {
@@ -512,7 +528,12 @@ func processFile(ctx context.Context, path string, encrypt bool, recipients []ag
 	defer func() {
 		if !ok {
 			out.Close()
-			_ = retryWhileLocked(func() error { return os.Remove(part) })
+			// Up to about 3 seconds while a scanner holds the new file; if it's still
+			// there, the error says so (the README promises nothing is left behind).
+			rmErr := retryWhileLockedFor(30, func() error { return os.Remove(part) })
+			if rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) && err != nil {
+				err = &partLeftError{err: err, Part: part}
+			}
 		}
 	}()
 

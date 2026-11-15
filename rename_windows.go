@@ -39,9 +39,12 @@ func renameNoReplace(from, to string) error {
 
 // retryWhileLocked retries briefly while Windows reports the file as in use:
 // antivirus and the search indexer often open a new file for a moment.
-func retryWhileLocked(action func() error) error {
+func retryWhileLocked(action func() error) error { return retryWhileLockedFor(10, action) }
+
+// retryWhileLockedFor is retryWhileLocked with a number of tries (100 ms apart).
+func retryWhileLockedFor(tries int, action func() error) error {
 	var err error
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := 0; attempt < tries; attempt++ {
 		err = action()
 		if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
 			return err

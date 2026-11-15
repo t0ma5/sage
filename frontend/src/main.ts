@@ -43,6 +43,8 @@ let lastSummary = "";   // "Finished: 2 OK, 1 failed." after a run
 let notes = "";         // notes from adding files, settings, etc.
 let notesWarn = false;
 let notesSticky = false; // a reminder that a run doesn't clear (the generated passphrase)
+let standingNotice = ""; // damaged or unsaveable settings: shown again after Clear
+let addGeneration = 0;   // Clear bumps it: drops still being read, or queued, then land nowhere
 
 /** The files the next run will process. */
 function pending(): string[] {
@@ -105,7 +107,7 @@ function rowButton(iconName: string, label: string, onclick: () => void, disable
 function removeEntry(e: Entry) {
     const index = entries.indexOf(e);
     entries = entries.filter(x => x !== e);
-    if (!entries.some(x => x.status === "done" || x.status === "failed")) lastSummary = "";
+    lastSummary = ""; // "Finished: 3 OK, 1 failed" no longer matches the list
     renderList();
     refresh();
     // Keep keyboard focus nearby instead of losing it with the removed row.
@@ -328,7 +330,8 @@ function saveSettingsSoon() {
         } as any).catch(err => {
             if (!settingsErrorShown) {
                 settingsErrorShown = true;
-                setNotes(String(err?.message ?? err), true);
+                standingNotice = String(err?.message ?? err);
+                setNotes(standingNotice, true, true);
             }
         });
     }, 400);
@@ -337,14 +340,16 @@ function saveSettingsSoon() {
 // ---------------------------------------------------------------- files
 
 // Adds run one after another, so two quick drops can't overwrite each other's files.
+// Each remembers the generation it was made in: after a Clear, it is dropped.
 let addQueue: Promise<void> = Promise.resolve();
 function addPaths(paths: string[] | null): Promise<void> {
-    addQueue = addQueue.then(() => addPathsNow(paths)).catch(() => {});
+    const generation = addGeneration;
+    addQueue = addQueue.then(() => addPathsNow(paths, generation)).catch(() => {});
     return addQueue;
 }
 
-async function addPathsNow(paths: string[] | null) {
-    if (!paths || paths.length === 0) return;
+async function addPathsNow(paths: string[] | null, generation: number) {
+    if (!paths || paths.length === 0 || generation !== addGeneration) return;
     if (busy) {
         hint.textContent = "Busy: wait for the current job to finish, or press Cancel.";
         hint.classList.add("warn");
@@ -352,7 +357,14 @@ async function addPathsNow(paths: string[] | null) {
     }
     const before = pending();
     const res = await SageService.AddPaths(before, paths);
-    if (busy) return; // a job started while this was in flight
+    // Cleared while Go was reading (a slow network folder): neither the drop nor the
+    // files listed before it come back.
+    if (generation !== addGeneration) return;
+    if (busy) {
+        // A job started while this was in flight; say so instead of dropping the files silently.
+        setNotes("Files added while a job ran were not included. Add them again.", true);
+        return;
+    }
     const resFiles = res.files ?? []; // Go sends an empty list as null
     const warn = res.note.startsWith("No files") || res.note.includes("Not added");
     // Nothing new: keep the list (and the last run's results); just show the note.
@@ -564,12 +576,13 @@ $("addFolder").onclick = async () => {
     if (dir) addPaths([dir]);
 };
 $("clear").onclick = () => {
+    addGeneration++; // a drop still being read is dropped too
     entries = [];
     lastSummary = "";
     passphrase.value = confirmPass.value = "";
     genArmed = false;
     setPassVisible(false);
-    setNotes("");
+    setNotes(standingNotice, standingNotice !== "", standingNotice !== ""); // settings warnings stay
     setProgress(0, false);
     renderList();
     refresh();
@@ -638,7 +651,10 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     identities.value = st.identities ? st.identities + "\n" : "";
     armor.checked = st.armor;
     pq.checked = st.postQuantum;
-    if (st.notice) setNotes(st.notice, true, true);
+    if (st.notice) {
+        standingNotice = st.notice;
+        setNotes(st.notice, true, true);
+    }
     setProgress(0, false);
     setTab(st.activeTab === "recipient" ? "recipient" : "passphrase", false);
     // Running as administrator: a warning dialog at start (like About), and an "Admin"

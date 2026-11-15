@@ -13,6 +13,8 @@ on:
 permissions:
   contents: read
 
+# Actions are pinned to commit SHAs (a tag can be moved, a SHA can't), like the age zip.
+
 env:
   AGE_VERSION: v1.3.2
   # SHA-256 of age's official age-v1.3.2-windows-amd64.zip (matches GitHub's
@@ -23,13 +25,13 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -107,7 +109,7 @@ jobs:
           [IO.File]::WriteAllText("$pwd\dist\SHA256SUMS.txt", (($sums -join "`n") + "`n"))
           Get-Content dist\SHA256SUMS.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sage-windows
           path: dist/*
@@ -123,14 +125,14 @@ jobs:
       id-token: write      # sign the provenance attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: sage-windows
           path: dist
 
       # The exes aren't code-signed. This records which workflow, commit and repo
       # built each zip; check with: gh attestation verify <zip> --repo t0ma5/sage
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: dist/*.zip
 
@@ -139,6 +141,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # A re-run for the same tag replaces the files of a still-draft release. A published
+          # one is never touched: builds aren't byte-identical, so the zips people downloaded
+          # would no longer match SHA256SUMS.txt.
+          if draft=$(gh release view "${{ github.ref_name }}" --json isDraft -q .isDraft 2>/dev/null); then
+            if [ "$draft" != "true" ]; then
+              echo "Release ${{ github.ref_name }} is already published; not replacing its files." >&2
+              exit 1
+            fi
+            gh release upload "${{ github.ref_name }}" dist/* --clobber
+            exit 0
+          fi
           gh release create "${{ github.ref_name }}" dist/* \
             --draft \
             --title "sage ${{ github.ref_name }}" \

@@ -606,7 +606,7 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 	}
 	ok, failed := 0, 0
-	var failedFiles []string
+	var failedFiles, leftovers []string
 	done := map[string]bool{}
 	stopReason := ""
 	for i, f := range files {
@@ -632,8 +632,16 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 		// The bytes of a failed file don't count as done.
 		doneBytes.Add(-counted)
+		var left *partLeftError
+		if errors.As(err, &left) {
+			leftovers = append(leftovers, left.Part)
+		}
 		if ctx.Err() != nil {
-			report(FileResult{Path: f, Cancelled: true, Error: "Cancelled; nothing was written."})
+			msg := "Cancelled; nothing was written."
+			if left != nil {
+				msg = "Cancelled; the partial file couldn't be deleted (see below)."
+			}
+			report(FileResult{Path: f, Cancelled: true, Error: msg})
 			break
 		}
 		failed++
@@ -658,6 +666,13 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 		summary += fmt.Sprintf(", %d not processed (%s)", skipped, why)
 	}
+	summary += "."
+	if len(leftovers) > 0 {
+		summary += "\nPartial output that couldn't be deleted (in use?); delete it yourself:"
+		for _, p := range leftovers {
+			summary += "\n  " + withoutLongPrefix(p)
+		}
+	}
 
 	// Failed and unprocessed files stay in the list for a retry, failed ones last.
 	isFailed := map[string]bool{}
@@ -671,7 +686,7 @@ func (s *SageService) run(ctx context.Context, files []string, encrypt bool,
 		}
 	}
 	remaining = append(remaining, failedFiles...)
-	result := JobDone{Summary: summary + ".", Remaining: remaining, Results: results}
+	result := JobDone{Summary: summary, Remaining: remaining, Results: results}
 	if s.app != nil {
 		s.app.Event.Emit("job:done", result)
 	}
