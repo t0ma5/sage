@@ -231,9 +231,6 @@ async function run() {
     if (busy || actionBtn.disabled) return;
     try {
         busy = true;
-        // Screen readers: hold the log's announcements until the job ends, then read the
-        // result, instead of reading every line of every file as it's written.
-        box.setAttribute("aria-busy", "true");
         lastSummary = "";
         setProgress(0);
         refresh();
@@ -241,7 +238,6 @@ async function run() {
         await SageService.Start(request(true) as any);
     } catch (err: any) {
         busy = false;
-        box.removeAttribute("aria-busy");
         appendBox("Could not start: " + (err?.message ?? err));
         refresh();
     }
@@ -262,7 +258,6 @@ Events.On("job:progress", ev => {
 Events.On("job:done", ev => {
     const d = ev.data as any;
     busy = false;
-    box.removeAttribute("aria-busy");
     files = d.remaining ?? [];
     mode = files.length === 0 ? "" : (files.every(f => f.toLowerCase().endsWith(".age")) ? "decrypt" : "encrypt");
     lastSummary = d.summary;
@@ -384,7 +379,18 @@ document.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach(a => {
     // pill in the header that reopens it, so a later blocked drag still has an explanation.
     const adminWarning = await SageService.AdminWarning();
     if (adminWarning) {
-        $("adminText").textContent = adminWarning.replace(/^Warning:\s*/, "");
+        // The app's name in bold: "<b>sage</b> is running as administrator. ... Close <b>sage</b> and ..."
+        const adminText = $("adminText");
+        adminText.replaceChildren();
+        for (const part of adminWarning.replace(/^Warning:\s*/, "").split(/\b(sage)\b/)) {
+            if (part === "sage") {
+                const b = document.createElement("strong");
+                b.textContent = part;
+                adminText.append(b);
+            } else {
+                adminText.append(part);
+            }
+        }
         $("adminChip").hidden = false;
         $("adminDialog").hidden = false;
         $("adminClose").focus();
