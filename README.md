@@ -14,8 +14,9 @@
 sage is unofficial and not affiliated with age's authors.
 
 <p align="center">
-  <img src="docs/screenshot-passphrase.png" alt="sage, Passphrase tab" width="49%">
-  <img src="docs/screenshot-recipient.png" alt="sage, Keys tab" width="49%">
+  <img src="docs/screenshot-start.png" alt="sage at start, no files yet" width="32%">
+  <img src="docs/screenshot-passphrase.png" alt="sage, Passphrase tab" width="32%">
+  <img src="docs/screenshot-recipient.png" alt="sage, Keys tab" width="32%">
 </p>
 
 ## Use it
