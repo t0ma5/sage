@@ -2,12 +2,22 @@
   <img src="docs/cover.png" alt="sage: Simple GUI for age" width="100%">
 </p>
 
+[![Go](https://img.shields.io/github/go-mod/go-version/t0ma5/sage?logo=go)](go.mod)
+[![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)](https://github.com/t0ma5/sage/releases/latest)
+[![x64 | ARM64](https://img.shields.io/badge/arch-x64%20%7C%20ARM64-555)](https://github.com/t0ma5/sage/releases/latest)
+[![Web version: wsage](https://img.shields.io/badge/web%20version-wsage-4a9eff?logo=cloudflarepages&logoColor=white)](https://wsage.pages.dev)
+[![License](https://img.shields.io/github/license/t0ma5/sage)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/t0ma5/sage?logo=github&label=release)](https://github.com/t0ma5/sage/releases/latest)
+[![Release build](https://img.shields.io/github/actions/workflow/status/t0ma5/sage/release.yml?logo=githubactions&label=release%20build)](https://github.com/t0ma5/sage/actions/workflows/release.yml)
+[![sage (Simple GUI for age) | AlternativeTo](https://img.shields.io/badge/AlternativeTo-sage-0a84ff?logo=alternativeto&logoColor=white)](https://alternativeto.net/software/sage-simple-gui-for-age/about/?utm_source=badge&utm_medium=referral)
+
 # sage
 
-**sage** = **S**imple GUI for **age**: a small Windows app for encrypting and decrypting files with [age](https://age-encryption.org), the simple, modern file encryption format.
+sage (Simple GUI for age) is a small and portable Windows app for encrypting and decrypting files with [age](https://age-encryption.org/), a secure encryption tool and Go library.
 
 - **Portable: one exe, nothing to install.** Copy `sage.exe` anywhere (a USB stick works) and run it. The official age library ([filippo.io/age](https://github.com/FiloSottile/age)) is built in, so sage doesn't call `age.exe` and needs no plugins.
-- **For Windows 10 and 11, x64 (amd64) and ARM64.** Download the zip for your PC from [Releases](https://github.com/t0ma5/sage/releases). Not sure which? Settings > System > About > System type.
+- **For Windows 10 and 11, x64 (amd64) and ARM64.** Download the zip for your PC from [Releases](https://github.com/t0ma5/sage/releases).
+- **Not on Windows? Use wsage in your browser.** [wsage](https://wsage.pages.dev) is sage's web version: it encrypts and decrypts age files and text right in the browser on any platform (Windows, macOS, Linux, Android, iOS), with nothing uploaded. Passphrases and age keys; no SSH keys. Source: [github.com/t0ma5/wsage](https://github.com/t0ma5/wsage).
 - **Drop files, type a passphrase or pick keys, done.** Output goes next to each file and never overwrites an existing one.
 - **Compatible with age.** Files sage encrypts open with the `age` command-line tool and any other age implementation, and the other way round (checked by the test suite against `age.exe`).
 
@@ -32,7 +42,7 @@ The line next to the button always says what is missing ("Repeat the passphrase 
 
 ### Passphrase
 
-For files protected with a passphrase (`age -p`). Encrypting asks for it twice; the eye button reveals it. **Generate a strong passphrase** fills in a random one (30 characters, about 148 bits) and shows it, so you can copy it somewhere safe. A passphrase containing a line break (usually from pasting) is refused. A wrong passphrase on the first file stops the batch, because every further file would fail the same way after another slow key derivation; files that failed or weren't processed stay in the list for a retry.
+For files protected with a passphrase (`age -p`). Encrypting asks for it twice; the eye button reveals it. **Generate a strong passphrase** fills in a random one (six groups of five characters, 35 with the dashes, about 148 bits) and shows it, so you can copy it somewhere safe. A passphrase containing a line break (usually from pasting) is refused. A wrong passphrase on the first file stops the batch, because every further file would fail the same way after another slow key derivation; files that failed or weren't processed stay in the list for a retry.
 
 ### Keys
 
